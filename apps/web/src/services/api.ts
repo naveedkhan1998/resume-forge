@@ -2,17 +2,43 @@ import { MasterContext, Profile, Experience, Education, Skill, Project, JobAppli
 
 const API_BASE = '/api';
 
+async function handleResponse<T = any>(res: Response): Promise<T> {
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // Plain text or HTML error (such as a traceback)
+    if (!res.ok) {
+      if (text.includes('Traceback')) {
+        const lines = text.trim().split('\n');
+        const lastLine = lines[lines.length - 1] || 'Server error occurred';
+        throw new Error(lastLine);
+      }
+      throw new Error(`Server returned HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return text as unknown as T;
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.error || data?.message || data?.detail || `Error (HTTP ${res.status})`;
+    throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+  }
+
+  return data;
+}
+
 export const api = {
   // AI Health & Settings
   async getAiHealth(endpoint?: string) {
     const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : '';
     const res = await fetch(`${API_BASE}/ai/health${query}`);
-    return res.json();
+    return handleResponse(res);
   },
 
   async getAiSettings(): Promise<AISettings> {
     const res = await fetch(`${API_BASE}/ai/settings`);
-    return res.json();
+    return handleResponse<AISettings>(res);
   },
 
   async updateAiSettings(data: AISettings) {
@@ -21,7 +47,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async refineSection(sectionType: string, currentContent: any, instruction: string) {
@@ -34,13 +60,13 @@ export const api = {
         instruction,
       }),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   // Master Context
   async getMasterContext(): Promise<MasterContext> {
     const res = await fetch(`${API_BASE}/master/all`);
-    return res.json();
+    return handleResponse<MasterContext>(res);
   },
 
   async updateProfile(profile: Profile) {
@@ -49,7 +75,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profile),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async createExperience(exp: Experience) {
@@ -58,7 +84,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exp),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async updateExperience(id: number, exp: Experience) {
@@ -67,14 +93,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exp),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async deleteExperience(id: number) {
     const res = await fetch(`${API_BASE}/master/experiences/${id}`, {
       method: 'DELETE',
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async createEducation(edu: Education) {
@@ -83,14 +109,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(edu),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async deleteEducation(id: number) {
     const res = await fetch(`${API_BASE}/master/educations/${id}`, {
       method: 'DELETE',
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async createSkill(skill: Skill) {
@@ -99,14 +125,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(skill),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async deleteSkill(id: number) {
     const res = await fetch(`${API_BASE}/master/skills/${id}`, {
       method: 'DELETE',
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async createProject(proj: Project) {
@@ -115,14 +141,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proj),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async deleteProject(id: number) {
     const res = await fetch(`${API_BASE}/master/projects/${id}`, {
       method: 'DELETE',
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   // Upload Resume
@@ -133,31 +159,27 @@ export const api = {
       method: 'POST',
       body: formData,
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || 'Upload failed');
-    }
-    return res.json();
+    return handleResponse(res);
   },
 
   // Job Applications
   async getJobs(): Promise<JobApplication[]> {
     const res = await fetch(`${API_BASE}/jobs`);
-    return res.json();
+    return handleResponse<JobApplication[]>(res);
   },
 
-  async createJob(job: { company_name: string; job_title: string; job_url?: string; raw_description: string; notes?: string }) {
+  async createJob(job: { company_name: string; job_title: string; job_url?: string; raw_description?: string; notes?: string }) {
     const res = await fetch(`${API_BASE}/jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(job),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async getJobDetail(id: number): Promise<JobApplication> {
     const res = await fetch(`${API_BASE}/jobs/${id}`);
-    return res.json();
+    return handleResponse<JobApplication>(res);
   },
 
   async updateJob(id: number, data: { status?: string; notes?: string }) {
@@ -166,25 +188,21 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async deleteJob(id: number) {
     const res = await fetch(`${API_BASE}/jobs/${id}`, {
       method: 'DELETE',
     });
-    return res.json();
+    return handleResponse(res);
   },
 
   async tailorJob(jobId: number) {
     const res = await fetch(`${API_BASE}/jobs/${jobId}/tailor`, {
       method: 'POST',
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Tailoring failed' }));
-      throw new Error(err.error || 'Tailoring failed');
-    }
-    return res.json();
+    return handleResponse(res);
   },
 
   async updateDocumentLatex(docId: number, latex_source: string) {
@@ -193,6 +211,6 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source }),
     });
-    return res.json();
+    return handleResponse(res);
   },
 };

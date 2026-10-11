@@ -30,6 +30,13 @@ api = NinjaAPI(
     description="API for AI-powered Resume Builder, Tailoring, and Application Tracker"
 )
 
+@api.exception_handler(Exception)
+def global_exception_handler(request: HttpRequest, exc: Exception):
+    import traceback, logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"Global API exception: {traceback.format_exc()}")
+    return api.create_response(request, {"error": str(exc)}, status=500)
+
 # Helper for demo / single-user or authenticated user
 def get_current_user(request: HttpRequest) -> User:
     if request.user.is_authenticated:
