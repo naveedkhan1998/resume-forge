@@ -7,6 +7,12 @@
     "serve": {
       "executor": "nx:run-commands",
       "options": {
+        "command": "docker compose --profile full up --build --remove-orphans --abort-on-container-exit api"
+      }
+    },
+    "serve-local": {
+      "executor": "nx:run-commands",
+      "options": {
         "command": ".venv/bin/python apps/api/manage.py runserver 0.0.0.0:8000"
       }
     },

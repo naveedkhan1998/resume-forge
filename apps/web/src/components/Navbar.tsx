@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Briefcase, UploadCloud, Cpu, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileText, Briefcase, UploadCloud, Cpu, Sparkles, AlertCircle } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'master' | 'upload' | 'jobs' | 'settings';
@@ -14,103 +14,69 @@ export const Navbar: React.FC<NavbarProps> = ({
   aiConnected,
   activeModel,
 }) => {
+  const items = [
+    { id: 'master' as const, label: 'Career profile', shortLabel: 'Profile', icon: FileText },
+    { id: 'upload' as const, label: 'Import resume', shortLabel: 'Import', icon: UploadCloud },
+    { id: 'jobs' as const, label: 'Applications', shortLabel: 'Jobs', icon: Briefcase },
+    { id: 'settings' as const, label: 'Local AI', shortLabel: 'AI', icon: Cpu },
+  ];
+
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo & Brand */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+        <div className="flex min-h-16 items-center justify-between gap-4">
+          <button onClick={() => setActiveTab('master')} className="flex items-center gap-3 text-left">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-lg text-slate-900 tracking-tight">ResumeForge</span>
-                <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 rounded-md border border-indigo-200">
-                  Open Source
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">Local Ollama Resume Tailoring & Tracker</p>
+              <span className="font-bold text-lg text-slate-950 tracking-tight">ResumeForge</span>
+              <p className="hidden text-xs text-slate-500 sm:block">Private, local-first job search workspace</p>
             </div>
-          </div>
+          </button>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
-            <button
-              onClick={() => setActiveTab('master')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'master'
-                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Master Context
-            </button>
-
-            <button
-              onClick={() => setActiveTab('upload')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'upload'
-                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-              }`}
-            >
-              <UploadCloud className="w-4 h-4" />
-              Upload & Parse
-            </button>
-
-            <button
-              onClick={() => setActiveTab('jobs')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'jobs'
-                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-              }`}
-            >
-              <Briefcase className="w-4 h-4" />
-              Job Tracker & Tailor
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'settings'
-                  ? 'bg-white text-indigo-600 shadow-xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              AI Settings
-            </button>
+          <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 lg:flex">
+            {items.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                  activeTab === id
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
           </nav>
 
-          {/* Ollama Status Badge */}
-          <div className="flex items-center gap-2">
-            <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                 aiConnected
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                   : 'bg-rose-50 text-rose-700 border-rose-200'
               }`}
-            >
-              {aiConnected ? (
-                <>
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span>Ollama: <strong>{activeModel}</strong></span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Ollama Disconnected</span>
-                </>
-              )}
-            </div>
-          </div>
+          >
+            {aiConnected ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : <AlertCircle className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{aiConnected ? activeModel : 'Ollama offline'}</span>
+          </button>
         </div>
+
+        <nav className="grid grid-cols-4 border-t border-slate-100 py-2 lg:hidden">
+          {items.map(({ id, shortLabel, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold ${
+                activeTab === id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500'
+              }`}
+            >
+              <Icon className="h-4 w-4" /> {shortLabel}
+            </button>
+          ))}
+        </nav>
       </div>
     </header>
   );

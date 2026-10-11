@@ -2,42 +2,57 @@ import React, { useRef, useState } from 'react';
 import { parseLatexDocument, ParsedDocument } from '../utils/latexParser';
 import html2pdf from 'html2pdf.js';
 import { Download, Printer, Copy, Check, Eye, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface LatexDocumentPreviewProps {
   latexSource: string;
   docType: 'resume' | 'cover_letter';
   companyName: string;
+  documentId?: number;
 }
 
 export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
   latexSource,
   docType,
   companyName,
+  documentId,
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const doc: ParsedDocument = parseLatexDocument(latexSource);
 
   const handleDownloadPdf = async () => {
     if (!printRef.current) return;
     setDownloading(true);
+    setDownloadError(null);
     try {
       const filename = `${companyName || 'Candidate'}_${docType}.pdf`.replace(/\s+/g, '_');
+      if (documentId) {
+        const blob = await api.downloadDocumentPdf(documentId);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
       const opt = {
         margin: [10, 10, 10, 10] as [number, number, number, number],
         filename,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, letterRendering: true },
         jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' as const },
+        enableLinks: true,
       };
 
       await html2pdf().set(opt).from(printRef.current).save();
     } catch (err) {
       console.error('Client-side PDF generation failed:', err);
-      // Fallback to browser print dialog
-      window.print();
+      setDownloadError(err instanceof Error ? err.message : 'PDF generation failed.');
     } finally {
       setDownloading(false);
     }
@@ -89,10 +104,16 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
             className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs"
           >
             {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-            Download as PDF
+            {documentId ? 'Download Compiled PDF' : 'Download Preview PDF'}
           </button>
         </div>
       </div>
+
+      {downloadError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" role="alert">
+          {downloadError}
+        </div>
+      )}
 
       {/* Realistic 8.5" x 11" Paper Container */}
       <div className="overflow-x-auto p-4 bg-slate-200/60 rounded-2xl flex justify-center border border-slate-300/60 shadow-inner">
@@ -115,9 +136,20 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
               </p>
             )}
             {doc.contactItems.length > 0 && (
-              <p className="text-[11px] text-slate-600 tracking-wide font-sans">
-                {doc.contactItems.join('  •  ')}
-              </p>
+              <div className="flex flex-wrap justify-center gap-x-2 text-[11px] text-slate-600 tracking-wide font-sans">
+                {doc.contactItems.map((item, index) => (
+                  <React.Fragment key={`${item.label}-${index}`}>
+                    {index > 0 && <span aria-hidden="true">•</span>}
+                    {item.url ? (
+                      <a href={item.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline decoration-indigo-300 underline-offset-2">
+                        {item.label}
+                      </a>
+                    ) : (
+                      <span>{item.label}</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
             )}
           </div>
 
@@ -182,6 +214,17 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
                               <span className="font-bold text-slate-900">
                                 {item.title}
                                 {item.subtitle && <span className="font-normal italic text-slate-600"> | {item.subtitle}</span>}
+                                {item.links && item.links.length > 0 && (
+                                  <span className="ml-2 inline-flex gap-1.5 font-normal not-italic">
+                                    {item.links.map((link, linkIndex) => (
+                                      link.url && (
+                                        <a key={`${link.url}-${linkIndex}`} href={link.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline">
+                                          {link.label}
+                                        </a>
+                                      )
+                                    ))}
+                                  </span>
+                                )}
                               </span>
                               <span className="text-[11px] text-slate-600">{item.date}</span>
                             </div>

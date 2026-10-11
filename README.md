@@ -91,6 +91,11 @@ ollama run qwen3.5:9b
 
 Inside the ResumeForge web UI, navigate to **AI Settings** to verify connectivity and select your preferred model.
 
+For lightweight models, start with a temperature between `0.1` and `0.3`. ResumeForge requests
+structured JSON, validates required fields, and automatically makes one focused repair attempt when
+a model returns malformed JSON. Tailoring also keeps the model context compact and never instructs
+the model to invent unsupported skills or metrics.
+
 ---
 
 ## 📜 License

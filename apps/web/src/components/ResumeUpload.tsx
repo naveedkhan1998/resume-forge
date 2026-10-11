@@ -28,7 +28,6 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
     try {
       const data = await api.uploadResume(file);
       setResult(data);
-      onUploadSuccess();
     } catch (err: any) {
       setError(err.message || 'Failed to upload and parse resume.');
     } finally {
@@ -64,7 +63,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
           <input
             id="resume-upload"
             type="file"
-            accept=".pdf,.docx,.doc,.txt"
+            accept=".pdf,.docx,.txt"
             className="hidden"
             onChange={handleFileChange}
             disabled={loading}

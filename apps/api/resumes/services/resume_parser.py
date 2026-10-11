@@ -1,12 +1,12 @@
-import json
-import re
 import io
+import json
 import logging
 from typing import Dict, Any, Optional
 import pypdf
 import pdfplumber
 import docx
 from django.contrib.auth.models import User
+from django.db import transaction
 from ..models import (
     Profile,
     Experience,
@@ -14,17 +14,37 @@ from ..models import (
     Skill,
     Project,
     Certification,
-    ItemEmbedding,
 )
 from .ollama_service import OllamaService
 
 logger = logging.getLogger(__name__)
 
-PARSE_SYSTEM_PROMPT = """You are an expert AI resume parser. 
-Your task is to thoroughly analyze the provided resume text and extract all information into a strict JSON structure.
-Be exhaustive: do not omit any job positions, bullet points, skills, projects, or educational history.
-Ensure your response is valid JSON matching this exact schema:
+PARSE_SYSTEM_PROMPT = """You are an expert AI resume parser.
+Your task is to turn the candidate resume into a clean structured JSON object with one entry per section.
 
+Rules:
+- Return only valid JSON in the exact schema below.
+- Preserve factual data and do not invent missing details.
+- Parse every visible section: profile, experiences, education, skills, projects, certifications.
+- Separate every visible experience or project bullet into its own list item.
+- Preserve wording and facts. Extract existing numbers and scope, but do not rewrite, embellish,
+  infer metrics, or merge facts from different roles.
+- For skills, split into relevant categories such as Languages, Frameworks, Cloud & DevOps, Databases, Tools, Leadership, or Design.
+- Distinguish employment, projects, education, certifications, and skills using headings and nearby dates.
+- Associate each bullet only with its nearest role, project, or education entry.
+- Treat "Present", "Current", or an open-ended latest role as is_current=true.
+- Treat freelance, self-employed, consulting, and independent-contract work as ONE experience entry,
+  not as separate jobs or standalone portfolio projects.
+- Put every freelance client engagement in that experience's client_projects list. Preserve the client
+  and project names when stated, and keep each engagement's bullets and technologies separate.
+- Use the top-level projects section only for personal, open-source, academic, or portfolio projects
+  that were not performed for a freelance client.
+- Never duplicate a freelance client engagement in both experiences and projects.
+- If a field is missing, set it to an empty string or empty array, not a placeholder like "N/A".
+- Deduplicate repeated entries; keep the most complete version.
+- Keep the order of experiences, projects, and educations in chronological order when possible.
+
+Exact schema:
 {
   "profile": {
     "full_name": "string",
@@ -46,7 +66,15 @@ Ensure your response is valid JSON matching this exact schema:
       "end_date": "string",
       "is_current": boolean,
       "bullet_points": ["string"],
-      "technologies": ["string"]
+      "technologies": ["string"],
+      "client_projects": [
+        {
+          "client": "string",
+          "project": "string",
+          "bullet_points": ["string"],
+          "technologies": ["string"]
+        }
+      ]
     }
   ],
   "educations": [
@@ -62,7 +90,7 @@ Ensure your response is valid JSON matching this exact schema:
   ],
   "skills": [
     {
-      "category": "string (e.g. Languages, Frameworks, Cloud & DevOps, Databases, Tools)",
+      "category": "string",
       "name": "string",
       "proficiency": "string"
     }
@@ -131,129 +159,247 @@ class ResumeParser:
             except Exception:
                 return str(content_bytes)
 
+    @staticmethod
+    def _normalize_value(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            cleaned = []
+            for item in value:
+                normalized = ResumeParser._normalize_value(item)
+                if isinstance(normalized, str):
+                    if normalized and normalized.lower() not in {"n/a", "na", "none"}:
+                        cleaned.append(normalized)
+                elif normalized is not None:
+                    cleaned.append(normalized)
+            unique = []
+            seen = set()
+            for item in cleaned:
+                identity = (
+                    json.dumps(item, sort_keys=True, ensure_ascii=False)
+                    if isinstance(item, (dict, list))
+                    else str(item)
+                )
+                if identity not in seen:
+                    seen.add(identity)
+                    unique.append(item)
+            return unique
+        if isinstance(value, dict):
+            return {str(key): ResumeParser._normalize_value(val) for key, val in value.items()}
+        return value
+
+    @classmethod
+    def normalize_parsed_data(cls, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        cleaned = cls._normalize_value(parsed_data)
+        if not isinstance(cleaned, dict):
+            raise ValueError("Parsed resume data must be a JSON object.")
+
+        profile = cleaned.setdefault("profile", {})
+        if not isinstance(profile, dict):
+            profile = {}
+        cleaned["profile"] = profile
+
+        section_fields = {
+            "experiences": {
+                "company": "", "role": "", "location": "", "start_date": "", "end_date": "",
+                "is_current": False, "bullet_points": [], "technologies": [], "client_projects": [],
+            },
+            "educations": {
+                "institution": "", "degree": "", "field_of_study": "", "start_date": "",
+                "end_date": "", "gpa": "", "highlights": [],
+            },
+            "skills": {"category": "Technical Skills", "name": "", "proficiency": ""},
+            "projects": {
+                "title": "", "subtitle": "", "role": "", "repo_url": "", "live_url": "",
+                "start_date": "", "end_date": "", "bullet_points": [], "technologies": [],
+            },
+            "certifications": {"name": "", "issuer": "", "issue_date": "", "credential_url": ""},
+        }
+        for key, defaults in section_fields.items():
+            items = cleaned.get(key, [])
+            if items is None:
+                items = []
+            if not isinstance(items, list):
+                raise ValueError(f"Resume parser field '{key}' must be a list.")
+            normalized_items = []
+            seen = set()
+            for item in items:
+                if key == "skills" and isinstance(item, str):
+                    item = {"category": "Technical Skills", "name": item, "proficiency": ""}
+                if not isinstance(item, dict):
+                    continue
+                record = {field: item.get(field, default) for field, default in defaults.items()}
+                for field, default in defaults.items():
+                    if isinstance(default, list) and not isinstance(record[field], list):
+                        record[field] = []
+                    elif isinstance(default, str):
+                        record[field] = str(record[field] or "").strip()
+                if key == "experiences":
+                    current = record["is_current"]
+                    record["is_current"] = (
+                        current is True
+                        or str(current).strip().casefold() in {"true", "yes", "present", "current"}
+                    )
+                    client_projects = record.pop("client_projects", [])
+                    for client_project in client_projects:
+                        if not isinstance(client_project, dict):
+                            continue
+                        client = str(client_project.get("client", "") or "").strip()
+                        project = str(client_project.get("project", "") or "").strip()
+                        label = " — ".join(part for part in (client, project) if part)
+                        bullets = client_project.get("bullet_points", [])
+                        if not isinstance(bullets, list):
+                            bullets = []
+                        for bullet in bullets:
+                            text = str(bullet or "").strip()
+                            if text:
+                                record["bullet_points"].append(f"{label}: {text}" if label else text)
+                        technologies = client_project.get("technologies", [])
+                        if isinstance(technologies, list):
+                            record["technologies"].extend(
+                                str(technology).strip()
+                                for technology in technologies
+                                if str(technology).strip()
+                            )
+                    record["bullet_points"] = list(dict.fromkeys(record["bullet_points"]))
+                    record["technologies"] = list(dict.fromkeys(record["technologies"]))
+                identity_fields = {
+                    "experiences": ("company", "role", "start_date"),
+                    "educations": ("institution", "degree"),
+                    "skills": ("category", "name"),
+                    "projects": ("title", "role"),
+                    "certifications": ("name", "issuer"),
+                }[key]
+                identity = tuple(str(record[field]).casefold() for field in identity_fields)
+                if any(identity) and identity not in seen:
+                    seen.add(identity)
+                    normalized_items.append(record)
+            cleaned[key] = normalized_items
+
+        if "profile" in cleaned and isinstance(cleaned["profile"], dict):
+            for field in ["full_name", "headline", "email", "phone", "location", "website_url", "linkedin_url", "github_url", "summary"]:
+                if field not in cleaned["profile"]:
+                    cleaned["profile"][field] = ""
+
+        return cleaned
+
     @classmethod
     def parse_with_ai(cls, raw_text: str, model_name: str = "qwen3.5:9b", base_url: Optional[str] = None) -> Dict[str, Any]:
         """Use Ollama to extract structured data from raw resume text."""
         ollama = OllamaService(base_url=base_url)
         messages = [
             {"role": "system", "content": PARSE_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Parse the following resume into JSON:\n\n{raw_text}"}
+            {"role": "user", "content": f"Parse the following resume into JSON:\n\n{raw_text[:20000]}"}
         ]
 
-        response = ollama.chat_sync(
+        parsed = ollama.chat_json_sync(
             model=model_name,
             messages=messages,
             temperature=0.1,
-            format_json=True
+            required_keys=("profile", "experiences", "educations", "skills", "projects"),
         )
-
-        content = response.get("content", "{}")
-        # Ensure we extract JSON if wrapped in markdown code fence
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode Ollama response as JSON: {content}")
-            raise ValueError(f"Ollama returned invalid JSON: {e}")
+        for key in ("experiences", "educations", "skills", "projects", "certifications"):
+            value = parsed.setdefault(key, [])
+            if not isinstance(value, list):
+                raise ValueError(f"Ollama response field '{key}' must be a list.")
+        if not isinstance(parsed["profile"], dict):
+            raise ValueError("Ollama response field 'profile' must be an object.")
+        return cls.normalize_parsed_data(parsed)
 
     @classmethod
     def save_to_database(cls, user: User, parsed_data: Dict[str, Any], raw_text: str = ""):
-        """Save parsed structured resume data into database models for the user."""
+        """Merge normalized resume data without duplicating previously imported sections."""
+        parsed_data = cls.normalize_parsed_data(parsed_data)
         profile_data = parsed_data.get("profile", {})
-        profile, _ = Profile.objects.get_or_create(user=user)
-        if profile_data.get("full_name"):
-            profile.full_name = profile_data["full_name"]
-        if profile_data.get("headline"):
-            profile.headline = profile_data["headline"]
-        if profile_data.get("email"):
-            profile.email = profile_data["email"]
-        if profile_data.get("phone"):
-            profile.phone = profile_data["phone"]
-        if profile_data.get("location"):
-            profile.location = profile_data["location"]
-        if profile_data.get("website_url"):
-            profile.website_url = profile_data["website_url"]
-        if profile_data.get("linkedin_url"):
-            profile.linkedin_url = profile_data["linkedin_url"]
-        if profile_data.get("github_url"):
-            profile.github_url = profile_data["github_url"]
-        if profile_data.get("summary"):
-            profile.summary = profile_data["summary"]
-        if raw_text:
-            profile.raw_resume_text = raw_text
-        profile.save()
+        with transaction.atomic():
+            profile, _ = Profile.objects.get_or_create(user=user)
+            for field in (
+                "full_name", "headline", "email", "phone", "location",
+                "website_url", "linkedin_url", "github_url", "summary",
+            ):
+                if profile_data.get(field):
+                    setattr(profile, field, profile_data[field])
+            if raw_text:
+                profile.raw_resume_text = raw_text
+            profile.save()
 
-        # Save experiences
-        for idx, exp in enumerate(parsed_data.get("experiences", [])):
-            if exp.get("company") and exp.get("role"):
-                Experience.objects.create(
+            for idx, exp in enumerate(parsed_data.get("experiences", [])):
+                if not exp.get("company") or not exp.get("role"):
+                    continue
+                Experience.objects.update_or_create(
                     user=user,
                     company=exp.get("company", ""),
                     role=exp.get("role", ""),
-                    location=exp.get("location", ""),
                     start_date=exp.get("start_date", ""),
-                    end_date=exp.get("end_date", ""),
-                    is_current=exp.get("is_current", False),
-                    bullet_points=exp.get("bullet_points", []),
-                    technologies=exp.get("technologies", []),
-                    order=idx
+                    defaults={
+                        "location": exp.get("location", ""),
+                        "end_date": exp.get("end_date", ""),
+                        "is_current": exp.get("is_current", False),
+                        "bullet_points": exp.get("bullet_points", []),
+                        "technologies": exp.get("technologies", []),
+                        "order": idx,
+                    },
                 )
 
-        # Save educations
-        for idx, edu in enumerate(parsed_data.get("educations", [])):
-            if edu.get("institution"):
-                Education.objects.create(
+            for idx, edu in enumerate(parsed_data.get("educations", [])):
+                if not edu.get("institution"):
+                    continue
+                Education.objects.update_or_create(
                     user=user,
                     institution=edu.get("institution", ""),
                     degree=edu.get("degree", ""),
-                    field_of_study=edu.get("field_of_study", ""),
-                    start_date=edu.get("start_date", ""),
-                    end_date=edu.get("end_date", ""),
-                    gpa=edu.get("gpa", ""),
-                    highlights=edu.get("highlights", []),
-                    order=idx
+                    defaults={
+                        "field_of_study": edu.get("field_of_study", ""),
+                        "start_date": edu.get("start_date", ""),
+                        "end_date": edu.get("end_date", ""),
+                        "gpa": edu.get("gpa", ""),
+                        "highlights": edu.get("highlights", []),
+                        "order": idx,
+                    },
                 )
 
-        # Save skills
-        for idx, sk in enumerate(parsed_data.get("skills", [])):
-            if sk.get("name"):
-                Skill.objects.create(
+            for idx, skill in enumerate(parsed_data.get("skills", [])):
+                if not skill.get("name"):
+                    continue
+                Skill.objects.update_or_create(
                     user=user,
-                    category=sk.get("category", "Technical Skills"),
-                    name=sk.get("name", ""),
-                    proficiency=sk.get("proficiency", ""),
-                    order=idx
+                    category=skill.get("category", "Technical Skills"),
+                    name=skill.get("name", ""),
+                    defaults={
+                        "proficiency": skill.get("proficiency", ""),
+                        "order": idx,
+                    },
                 )
 
-        # Save projects
-        for idx, proj in enumerate(parsed_data.get("projects", [])):
-            if proj.get("title"):
-                Project.objects.create(
+            for idx, project in enumerate(parsed_data.get("projects", [])):
+                if not project.get("title"):
+                    continue
+                Project.objects.update_or_create(
                     user=user,
-                    title=proj.get("title", ""),
-                    subtitle=proj.get("subtitle", ""),
-                    role=proj.get("role", ""),
-                    repo_url=proj.get("repo_url", ""),
-                    live_url=proj.get("live_url", ""),
-                    start_date=proj.get("start_date", ""),
-                    end_date=proj.get("end_date", ""),
-                    bullet_points=proj.get("bullet_points", []),
-                    technologies=proj.get("technologies", []),
-                    order=idx
+                    title=project.get("title", ""),
+                    defaults={
+                        "subtitle": project.get("subtitle", ""),
+                        "role": project.get("role", ""),
+                        "repo_url": project.get("repo_url", ""),
+                        "live_url": project.get("live_url", ""),
+                        "start_date": project.get("start_date", ""),
+                        "end_date": project.get("end_date", ""),
+                        "bullet_points": project.get("bullet_points", []),
+                        "technologies": project.get("technologies", []),
+                        "order": idx,
+                    },
                 )
 
-        # Save certifications
-        for idx, cert in enumerate(parsed_data.get("certifications", [])):
-            if cert.get("name"):
-                Certification.objects.create(
+            for idx, certification in enumerate(parsed_data.get("certifications", [])):
+                if not certification.get("name"):
+                    continue
+                Certification.objects.update_or_create(
                     user=user,
-                    name=cert.get("name", ""),
-                    issuer=cert.get("issuer", ""),
-                    issue_date=cert.get("issue_date", ""),
-                    credential_url=cert.get("credential_url", ""),
-                    order=idx
+                    name=certification.get("name", ""),
+                    issuer=certification.get("issuer", ""),
+                    defaults={
+                        "issue_date": certification.get("issue_date", ""),
+                        "credential_url": certification.get("credential_url", ""),
+                        "order": idx,
+                    },
                 )

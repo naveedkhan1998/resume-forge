@@ -10,6 +10,7 @@ export interface ParsedResumeItem {
   date?: string;
   location?: string;
   content?: string;
+  links?: ParsedLink[];
 }
 
 export interface ParsedResumeSection {
@@ -21,13 +22,61 @@ export interface ParsedDocument {
   docType: 'resume' | 'cover_letter';
   name: string;
   headline?: string;
-  contactItems: string[];
+  contactItems: ParsedLink[];
   sections: ParsedResumeSection[];
   // Cover letter specific
   date?: string;
   company?: string;
   position?: string;
   paragraphs?: string[];
+}
+
+export interface ParsedLink {
+  label: string;
+  url?: string;
+}
+
+function cleanLatexUrl(url: string): string {
+  return url
+    .replace(/\\([%#&_{}])/g, '$1')
+    .replace(/\\string\^/g, '^')
+    .replace(/\\string~/g, '~')
+    .trim();
+}
+
+function extractLinks(text: string): ParsedLink[] {
+  const links: ParsedLink[] = [];
+  const hrefRegex = /\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = hrefRegex.exec(text)) !== null) {
+    links.push({ url: cleanLatexUrl(match[1]), label: cleanLatex(match[2]) });
+  }
+  return links;
+}
+
+function extractCommandArguments(source: string, command: string, count: number): string[][] {
+  const results: string[][] = [];
+  let cursor = 0;
+  while ((cursor = source.indexOf(command, cursor)) >= 0) {
+    let position = cursor + command.length;
+    const args: string[] = [];
+    while (args.length < count) {
+      while (/\s/.test(source[position] || '')) position += 1;
+      if (source[position] !== '{') break;
+      let depth = 1;
+      const start = ++position;
+      while (position < source.length && depth > 0) {
+        if (source[position] === '{' && source[position - 1] !== '\\') depth += 1;
+        if (source[position] === '}' && source[position - 1] !== '\\') depth -= 1;
+        position += 1;
+      }
+      if (depth !== 0) break;
+      args.push(source.slice(start, position - 1));
+    }
+    if (args.length === count) results.push(args);
+    cursor = Math.max(position, cursor + command.length);
+  }
+  return results;
 }
 
 // Clean LaTeX escaping & formatting commands into readable text
@@ -51,6 +100,9 @@ export function cleanLatex(text: string): string {
     .replace(/\\\}/g, '}')
     .replace(/\\textasciitilde\{\}/g, '~')
     .replace(/\\textasciicircum\{\}/g, '^')
+    .replace(/\\textbackslash\{\}/g, '\\')
+    .replace(/\\enspace/g, ' ')
+    .replace(/\\textbar/g, '|')
     .replace(/--/g, '–')
     .replace(/\\vspace\{[^}]*\}/g, '')
     .replace(/\\\\/g, '\n')
@@ -98,8 +150,14 @@ function parseResume(source: string): ParsedDocument {
       }
       // Contact line
       const contactLine = lines[lines.length - 1];
-      const rawParts = contactLine.split(/\$\|\$|\|/).map((p) => cleanLatex(p)).filter(Boolean);
-      doc.contactItems = rawParts;
+      const links = extractLinks(contactLine);
+      const rawParts = contactLine
+        .replace(/\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g, '')
+        .split(/\$\|\$|\||\\textbar/)
+        .map((part) => cleanLatex(part))
+        .filter(Boolean)
+        .map((label) => ({ label }));
+      doc.contactItems = [...rawParts, ...links];
     }
   }
 
@@ -118,40 +176,33 @@ function parseResume(source: string): ParsedDocument {
     };
 
     // Subheadings: \resumeSubheading{arg1}{arg2}{arg3}{arg4}
-    const subheadingRegex = /\\resumeSubheading\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}\{([^}]*)\}/g;
-    let subMatch;
-    while ((subMatch = subheadingRegex.exec(sectionBody)) !== null) {
+    for (const args of extractCommandArguments(sectionBody, '\\resumeSubheading', 4)) {
       section.items.push({
         type: 'subheading',
-        title: cleanLatex(subMatch[1]),
-        date: cleanLatex(subMatch[2]),
-        subtitle: cleanLatex(subMatch[3]),
-        location: cleanLatex(subMatch[4]),
+        title: cleanLatex(args[0]),
+        date: cleanLatex(args[1]),
+        subtitle: cleanLatex(args[2]),
+        location: cleanLatex(args[3]),
       });
     }
 
-    // Projects: \resumeProjectHeading{arg1}{arg2}
-    const projectRegex = /\\resumeProjectHeading\{([^}]*)\}\{([^}]*)\}/g;
-    let projMatch;
-    while ((projMatch = projectRegex.exec(sectionBody)) !== null) {
-      const headingParts = projMatch[1].split(/\$\|\$|\|/);
+    for (const args of extractCommandArguments(sectionBody, '\\resumeProjectHeading', 2)) {
+      const headingParts = args[0].split(/\$\|\$|\||\\textbar/);
       const title = cleanLatex(headingParts[0] || '');
       const subtitle = cleanLatex(headingParts[1] || '');
       section.items.push({
         type: 'project',
         title,
         subtitle,
-        date: cleanLatex(projMatch[2]),
+        date: cleanLatex(args[1]),
+        links: extractLinks(args[0]),
       });
     }
 
-    // Bullet items: \resumeItem{...}
-    const itemRegex = /\\resumeItem\{([\s\S]*?)\}(?=\s*(\\resumeItem|\\resumeItemListEnd|\\resumeSubheading|\\resumeProjectHeading|$))/g;
-    let itemMatch;
-    while ((itemMatch = itemRegex.exec(sectionBody)) !== null) {
+    for (const args of extractCommandArguments(sectionBody, '\\resumeItem', 1)) {
       section.items.push({
         type: 'bullet',
-        content: cleanLatex(itemMatch[1]),
+        content: cleanLatex(args[0]),
       });
     }
 
@@ -196,6 +247,11 @@ function parseCoverLetter(source: string): ParsedDocument {
                     source.match(/\\textbf\{([A-Za-z\s]+)\}/);
   if (nameMatch) {
     doc.name = cleanLatex(nameMatch[1]);
+  }
+
+  const centerMatch = source.match(/\\begin\{center\}([\s\S]*?)\\end\{center\}/i);
+  if (centerMatch) {
+    doc.contactItems = extractLinks(centerMatch[1]);
   }
 
   const dateMatch = source.match(/\\textbf\{Date:\}\s*([^\\]+)/i);

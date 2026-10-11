@@ -6,6 +6,7 @@ import {
   Education,
   Skill,
   Project,
+  Certification,
 } from '../types';
 import { api } from '../services/api';
 import {
@@ -22,6 +23,9 @@ import {
   X,
   MessageSquare,
   Loader2,
+  Award,
+  Send,
+  RotateCcw,
 } from 'lucide-react';
 
 interface MasterProfileProps {
@@ -29,6 +33,23 @@ interface MasterProfileProps {
   onRefresh: () => void;
   activeModel: string;
 }
+
+type RefineTargetKind = 'summary' | 'experience' | 'project' | 'education' | 'skills' | 'certifications';
+type RefineMessage = { role: 'user' | 'assistant'; content: string };
+
+const contentItems = (content: unknown): string[] => {
+  if (typeof content === 'string') return content ? [content] : [];
+  if (!Array.isArray(content)) return [];
+  return content.map((item) => {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      if (record.name && record.category) return `${record.name} · ${record.category}`;
+      if (record.name) return `${record.name}${record.issuer ? ` — ${record.issuer}` : ''}`;
+    }
+    return JSON.stringify(item);
+  });
+};
 
 export const MasterProfile: React.FC<MasterProfileProps> = ({
   context,
@@ -49,11 +70,18 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   // AI Refine Modal state
   const [refineModalOpen, setRefineModalOpen] = useState(false);
   const [refineSectionType, setRefineSectionType] = useState('experience');
-  const [refineTargetExpId, setRefineTargetExpId] = useState<number | null>(null);
-  const [refineContent, setRefineContent] = useState<any>(null);
+  const [refineTargetId, setRefineTargetId] = useState<number | null>(null);
+  const [refineTargetKind, setRefineTargetKind] = useState<RefineTargetKind>('experience');
+  const [refineTargetLabel, setRefineTargetLabel] = useState('Experience');
+  const [refineOriginalContent, setRefineOriginalContent] = useState<unknown>(null);
+  const [refineDraftContent, setRefineDraftContent] = useState<unknown>(null);
   const [refinePrompt, setRefinePrompt] = useState('');
   const [refining, setRefining] = useState(false);
-  const [refineResult, setRefineResult] = useState<any | null>(null);
+  const [refineMessages, setRefineMessages] = useState<RefineMessage[]>([]);
+  const [refineExplanation, setRefineExplanation] = useState('');
+  const [refineError, setRefineError] = useState<string | null>(null);
+  const [refineConfirmOpen, setRefineConfirmOpen] = useState(false);
+  const [savingRefine, setSavingRefine] = useState(false);
 
   // New Experience Modal state
   const [newExpOpen, setNewExpOpen] = useState(false);
@@ -138,50 +166,172 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     onRefresh();
   };
 
-  const openAiRefineForExp = (exp: Experience) => {
-    setRefineSectionType('experience');
-    setRefineTargetExpId(exp.id || null);
-    setRefineContent(exp.bullet_points);
-    setRefinePrompt('Quantify bullet points with measurable impact and action verbs.');
-    setRefineResult(null);
+  const openRefineChat = (
+    kind: RefineTargetKind,
+    sectionType: string,
+    targetId: number | null,
+    label: string,
+    content: unknown,
+    starter: string,
+  ) => {
+    setRefineTargetKind(kind);
+    setRefineSectionType(sectionType);
+    setRefineTargetId(targetId);
+    setRefineTargetLabel(label);
+    setRefineOriginalContent(content);
+    setRefineDraftContent(content);
+    setRefinePrompt(starter);
+    setRefineMessages([]);
+    setRefineExplanation('');
+    setRefineError(null);
+    setRefineConfirmOpen(false);
     setRefineModalOpen(true);
+  };
+
+  const openAiRefineForExp = (exp: Experience) => {
+    openRefineChat(
+      'experience',
+      'experience',
+      exp.id || null,
+      `${exp.role} at ${exp.company}`,
+      exp.bullet_points || [],
+      'Make these bullets more concise and impact-oriented without inventing metrics.',
+    );
+  };
+
+  const openAiRefineForProject = (proj: Project) => {
+    openRefineChat(
+      'project',
+      'project',
+      proj.id || null,
+      proj.title,
+      proj.bullet_points || [],
+      'Emphasize the project scope, technical decisions, and demonstrated impact.',
+    );
+  };
+
+  const openAiRefineForEducation = (edu: Education) => {
+    openRefineChat(
+      'education',
+      'education',
+      edu.id || null,
+      `${edu.degree} at ${edu.institution}`,
+      edu.highlights || [],
+      'Tighten these academic highlights into recruiter-friendly phrasing.',
+    );
+  };
+
+  const openAiRefineForSummary = () => {
+    openRefineChat(
+      'summary',
+      'summary',
+      null,
+      'Professional summary',
+      profile.summary || '',
+      'Make this summary specific, concise, and supported by my existing claims.',
+    );
+  };
+
+  const openAiRefineForSkills = () => {
+    openRefineChat(
+      'skills',
+      'skills',
+      null,
+      'Skills inventory',
+      context.skills.map(({ category, name, proficiency }) => ({ category, name, proficiency: proficiency || '' })),
+      'Reorganize these skills into clear categories and remove duplicates.',
+    );
+  };
+
+  const openAiRefineForCertifications = () => {
+    openRefineChat(
+      'certifications',
+      'certifications',
+      null,
+      'Certifications',
+      (context.certifications || []).map(({ name, issuer, issue_date, credential_url }) => ({
+        name,
+        issuer: issuer || '',
+        issue_date: issue_date || '',
+        credential_url: credential_url || '',
+      })),
+      'Clean up this certification list. Do not add credentials I have not provided.',
+    );
   };
 
   const handleRunAiRefine = async () => {
     if (!refinePrompt.trim()) return;
+    const instruction = refinePrompt.trim();
+    setRefineError(null);
     setRefining(true);
     try {
       const res = await api.refineSection(
         refineSectionType,
-        refineContent,
-        refinePrompt
+        refineDraftContent,
+        instruction,
+        refineMessages,
       );
-      setRefineResult(res);
+      setRefineDraftContent(res.proposed_content);
+      setRefineExplanation(res.explanation || '');
+      setRefineMessages((current) => [
+        ...current,
+        { role: 'user', content: instruction },
+        { role: 'assistant', content: res.assistant_message || res.explanation || 'Draft updated.' },
+      ]);
+      setRefinePrompt('');
     } catch (err) {
       console.error(err);
+      setRefineError(err instanceof Error ? err.message : 'AI refinement failed.');
     } finally {
       setRefining(false);
     }
   };
 
   const handleApplyRefine = async () => {
-    if (!refineResult || !refineTargetExpId) return;
-    const exp = context.experiences.find((e) => e.id === refineTargetExpId);
-    if (!exp) return;
-
-    let updatedBullets = exp.bullet_points;
-    if (Array.isArray(refineResult.refined_content)) {
-      updatedBullets = refineResult.refined_content;
-    } else if (typeof refineResult.refined_content === 'string') {
-      updatedBullets = refineResult.refined_content.split('\n').filter(Boolean);
+    setSavingRefine(true);
+    setRefineError(null);
+    try {
+      if (refineTargetKind === 'summary') {
+        const updatedProfile = { ...profile, summary: String(refineDraftContent || '') };
+        await api.updateProfile(updatedProfile);
+        setProfile(updatedProfile);
+      } else if (refineTargetKind === 'skills') {
+        await api.replaceSkills(refineDraftContent as Skill[]);
+      } else if (refineTargetKind === 'certifications') {
+        await api.replaceCertifications(refineDraftContent as Certification[]);
+      } else if (refineTargetKind === 'experience' && refineTargetId) {
+        const experience = context.experiences.find((item) => item.id === refineTargetId);
+        if (!experience) throw new Error('Experience no longer exists.');
+        await api.updateExperience(refineTargetId, {
+          ...experience,
+          bullet_points: refineDraftContent as string[],
+        });
+      } else if (refineTargetKind === 'project' && refineTargetId) {
+        const project = context.projects.find((item) => item.id === refineTargetId);
+        if (!project) throw new Error('Project no longer exists.');
+        await api.updateProject(refineTargetId, {
+          ...project,
+          bullet_points: refineDraftContent as string[],
+        });
+      } else if (refineTargetKind === 'education' && refineTargetId) {
+        const education = context.educations.find((item) => item.id === refineTargetId);
+        if (!education) throw new Error('Education entry no longer exists.');
+        await api.updateEducation(refineTargetId, {
+          ...education,
+          highlights: refineDraftContent as string[],
+        });
+      } else {
+        throw new Error('This section is no longer available.');
+      }
+      setRefineModalOpen(false);
+      setRefineConfirmOpen(false);
+      onRefresh();
+    } catch (err) {
+      setRefineError(err instanceof Error ? err.message : 'Could not apply these changes.');
+      setRefineConfirmOpen(false);
+    } finally {
+      setSavingRefine(false);
     }
-
-    await api.updateExperience(refineTargetExpId, {
-      ...exp,
-      bullet_points: updatedBullets,
-    });
-    setRefineModalOpen(false);
-    onRefresh();
   };
 
   return (
@@ -280,7 +430,16 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Professional Summary</label>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-700">Professional Summary</label>
+                  <button
+                    type="button"
+                    onClick={openAiRefineForSummary}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-violet-700 hover:text-violet-900"
+                  >
+                    <Sparkles className="h-3 w-3" /> AI Refine
+                  </button>
+                </div>
                 <textarea
                   rows={4}
                   value={profile.summary}
@@ -315,13 +474,21 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 <Wrench className="w-5 h-5 text-indigo-600" />
                 <span>Skills Inventory ({context.skills.length})</span>
               </div>
-              <button
-                onClick={() => setNewSkillOpen(true)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-indigo-600 transition-colors"
-                title="Add Skill"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={openAiRefineForSkills}
+                  className="flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-100"
+                >
+                  <Sparkles className="h-3 w-3" /> AI Refine
+                </button>
+                <button
+                  onClick={() => setNewSkillOpen(true)}
+                  className="p-1 hover:bg-slate-100 rounded-lg text-indigo-600 transition-colors"
+                  title="Add Skill"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {newSkillOpen && (
@@ -374,6 +541,35 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       <X className="w-3 h-3" />
                     </button>
                   </span>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-slate-900">
+                <Award className="h-5 w-5 text-indigo-600" />
+                <span>Certifications ({context.certifications?.length || 0})</span>
+              </div>
+              <button
+                onClick={openAiRefineForCertifications}
+                className="flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-100"
+              >
+                <Sparkles className="h-3 w-3" /> AI Refine
+              </button>
+            </div>
+            <div className="space-y-2">
+              {!context.certifications?.length ? (
+                <p className="text-xs text-slate-400">No certifications yet. Use AI Refine and provide the credential details in chat.</p>
+              ) : (
+                context.certifications.map((certification) => (
+                  <div key={certification.id || `${certification.name}-${certification.issuer}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-900">{certification.name}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {[certification.issuer, certification.issue_date].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
                 ))
               )}
             </div>
@@ -546,11 +742,21 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 ) : (
                   context.educations.map((edu) => (
                     <div key={edu.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="font-semibold text-xs text-slate-900">{edu.degree}</p>
-                      <p className="text-[11px] text-slate-600">{edu.institution}</p>
-                      <p className="text-[10px] text-slate-400">
-                        {edu.start_date} – {edu.end_date}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-xs text-slate-900">{edu.degree}</p>
+                          <p className="text-[11px] text-slate-600">{edu.institution}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {edu.start_date} – {edu.end_date}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => openAiRefineForEducation(edu)}
+                          className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+                        >
+                          <Sparkles className="w-3 h-3" /> AI Refine
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -569,13 +775,23 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 ) : (
                   context.projects.map((proj) => (
                     <div key={proj.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="font-semibold text-xs text-slate-900">{proj.title}</p>
-                      {proj.subtitle && <p className="text-[11px] text-slate-600">{proj.subtitle}</p>}
-                      {proj.bullet_points && proj.bullet_points.length > 0 && (
-                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                          {proj.bullet_points[0]}
-                        </p>
-                      )}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-xs text-slate-900">{proj.title}</p>
+                          {proj.subtitle && <p className="text-[11px] text-slate-600">{proj.subtitle}</p>}
+                          {proj.bullet_points && proj.bullet_points.length > 0 && (
+                            <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                              {proj.bullet_points[0]}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => openAiRefineForProject(proj)}
+                          className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 rounded-lg transition-colors"
+                        >
+                          <Sparkles className="w-3 h-3" /> AI Refine
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -588,11 +804,11 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       {/* AI Refine Chat Modal */}
       {refineModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5">
             <div className="flex items-center justify-between border-b pb-3">
               <div className="flex items-center gap-2 font-semibold text-slate-900">
                 <Sparkles className="w-5 h-5 text-violet-600" />
-                <span>AI Section Refinement ({activeModel})</span>
+                <span>AI Section Chat ({activeModel})</span>
               </div>
               <button
                 onClick={() => setRefineModalOpen(false)}
@@ -602,65 +818,110 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Chat Instruction for AI
-              </label>
-              <textarea
-                rows={2}
-                value={refinePrompt}
-                onChange={(e) => setRefinePrompt(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-violet-500"
-                placeholder="What should the AI change? E.g., 'Rewrite bullet points with concrete metrics using STAR format'"
-              />
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Editing</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">{refineTargetLabel}</p>
+            </div>
 
-              {/* Prompt chips */}
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {[
-                  'Add metrics & numbers',
-                  'Use STAR format',
-                  'Make more concise',
-                  'Highlight leadership',
-                  'Emphasize systems architecture',
-                ].map((chip) => (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Working draft</p>
                   <button
-                    key={chip}
-                    onClick={() => setRefinePrompt(chip)}
-                    className="px-2 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
+                    onClick={() => {
+                      setRefineDraftContent(refineOriginalContent);
+                      setRefineMessages([]);
+                      setRefineExplanation('');
+                    }}
+                    className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-slate-800"
                   >
-                    {chip}
+                    <RotateCcw className="h-3 w-3" /> Reset
                   </button>
-                ))}
+                </div>
+                <ul className="mt-2 space-y-2 text-xs text-slate-700">
+                  {contentItems(refineDraftContent).length === 0 ? (
+                    <li className="text-slate-400">No entries yet.</li>
+                  ) : (
+                    contentItems(refineDraftContent).map((item, idx) => (
+                      <li key={`${item}-${idx}`} className="rounded-lg bg-white px-2 py-1.5 border border-slate-200">
+                        {item}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+
+              <div>
+                <div className="mb-3 max-h-40 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-2">
+                  {refineMessages.length === 0 ? (
+                    <p className="p-2 text-[11px] text-slate-400">Ask AI to add, remove, reorder, or rewrite this section.</p>
+                  ) : refineMessages.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      className={`rounded-lg px-2.5 py-2 text-[11px] ${
+                        message.role === 'user'
+                          ? 'ml-6 bg-slate-900 text-white'
+                          : 'mr-6 border border-slate-200 bg-white text-slate-700'
+                      }`}
+                    >
+                      {message.content}
+                    </div>
+                  ))}
+                </div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Continue the conversation
+                </label>
+                <textarea
+                  rows={4}
+                  value={refinePrompt}
+                  onChange={(e) => setRefinePrompt(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-violet-500"
+                  placeholder="Remove the second bullet, add this fact, or revise the current draft..."
+                />
+
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {[
+                    'Remove weak bullets',
+                    'Make it concise',
+                    'Add this new fact:',
+                    'Reorder by impact',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      onClick={() => setRefinePrompt(chip)}
+                      className="px-2 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="flex justify-end">
               <button
                 onClick={handleRunAiRefine}
-                disabled={refining}
+                disabled={refining || !refinePrompt.trim()}
                 className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-medium text-xs rounded-xl shadow-xs transition-all"
               >
-                {refining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Generate Improvement
+                {refining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send message
               </button>
             </div>
 
-            {refineResult && (
-              <div className="mt-4 p-4 rounded-xl bg-violet-50/70 border border-violet-200 space-y-3">
-                <p className="text-xs font-semibold text-violet-900">
-                  AI Suggestion ({refineResult.explanation}):
-                </p>
-                <div className="text-xs text-slate-800 bg-white p-3 rounded-lg border border-violet-100 max-h-48 overflow-y-auto space-y-1">
-                  {Array.isArray(refineResult.refined_content) ? (
-                    refineResult.refined_content.map((b: string, idx: number) => (
-                      <p key={idx} className="leading-relaxed">
-                        • {b}
-                      </p>
-                    ))
-                  ) : (
-                    <p>{refineResult.refined_content}</p>
-                  )}
+            {refineError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {refineError}
+              </div>
+            )}
+
+            {refineMessages.length > 0 && (
+              <div className="rounded-xl bg-violet-50/80 border border-violet-200 p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-violet-900">Unsaved draft updated</p>
+                  {refineExplanation && <p className="mt-1 text-[11px] text-violet-700">{refineExplanation}</p>}
                 </div>
+
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     onClick={() => setRefineModalOpen(false)}
@@ -669,10 +930,35 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     Discard
                   </button>
                   <button
-                    onClick={handleApplyRefine}
+                    onClick={() => setRefineConfirmOpen(true)}
                     className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium shadow-xs"
                   >
-                    Apply to Experience
+                    Review & apply
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {refineConfirmOpen && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-sm font-semibold text-emerald-900">Confirm section replacement</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  Replace the saved content for <strong>{refineTargetLabel}</strong> with this working draft?
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    onClick={() => setRefineConfirmOpen(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-white"
+                  >
+                    Keep editing
+                  </button>
+                  <button
+                    onClick={handleApplyRefine}
+                    disabled={savingRefine}
+                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                  >
+                    {savingRefine && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Confirm and save
                   </button>
                 </div>
               </div>

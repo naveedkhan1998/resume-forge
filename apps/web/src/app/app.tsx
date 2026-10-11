@@ -6,7 +6,7 @@ import { JobTracker } from '../components/JobTracker';
 import { Settings } from '../components/Settings';
 import { MasterContext, AISettings } from '../types';
 import { api } from '../services/api';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'master' | 'upload' | 'jobs' | 'settings'>('master');
@@ -14,8 +14,10 @@ export function App() {
   const [aiConnected, setAiConnected] = useState(false);
   const [activeModel, setActiveModel] = useState('qwen3.5:9b');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
+    setLoadError(null);
     try {
       const [ctx, health, settings] = await Promise.all([
         api.getMasterContext(),
@@ -31,6 +33,7 @@ export function App() {
       }
     } catch (err) {
       console.error('Failed to load initial app data:', err);
+      setLoadError(err instanceof Error ? err.message : 'Could not load application data.');
     } finally {
       setLoading(false);
     }
@@ -68,6 +71,17 @@ export function App() {
       />
 
       <main className="flex-1">
+        {loadError && (
+          <div className="mx-auto mt-6 flex max-w-4xl items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span><strong>API unavailable.</strong> {loadError}</span>
+            </div>
+            <button onClick={loadData} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold shadow-sm">
+              <RefreshCw className="h-3.5 w-3.5" /> Retry
+            </button>
+          </div>
+        )}
         {activeTab === 'master' && context && (
           <MasterProfile
             context={context}
@@ -93,11 +107,10 @@ export function App() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-200/80 bg-white py-6 mt-12 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>ResumeForge • Open Source Local AI Resume Builder & Job Tracker</p>
-          <p className="text-slate-400">Powered by Django Ninja, React, PostgreSQL (pgvector) & Ollama</p>
+          <p>ResumeForge · Your career data stays on your machine</p>
+          <p className="text-slate-400">Local-first resume optimization with Ollama</p>
         </div>
       </footer>
     </div>

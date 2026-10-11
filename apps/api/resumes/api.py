@@ -1,11 +1,12 @@
 import json
-from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, EmailStr
-from ninja import NinjaAPI, File, Form, Schema
+import re
+from typing import Any, List, Literal, Optional
+from ninja import NinjaAPI, File, Schema
 from ninja.files import UploadedFile
 from ninja.security import django_auth
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.http import HttpResponse, HttpRequest
 from django.shortcuts import get_object_or_404
 from .models import (
@@ -23,6 +24,7 @@ from .services.ollama_service import OllamaService
 from .services.resume_parser import ResumeParser
 from .services.tailor_service import TailorService
 from .services.section_editor import SectionEditor
+from .services.latex_compiler import LatexCompiler
 
 api = NinjaAPI(
     title="ResumeForge API",
@@ -104,6 +106,14 @@ class SkillSchema(Schema):
     proficiency: Optional[str] = ""
     order: Optional[int] = 0
 
+class CertificationSchema(Schema):
+    id: Optional[int] = None
+    name: str
+    issuer: Optional[str] = ""
+    issue_date: Optional[str] = ""
+    credential_url: Optional[str] = ""
+    order: Optional[int] = 0
+
 class ProjectSchema(Schema):
     id: Optional[int] = None
     title: str
@@ -135,10 +145,15 @@ class JobApplicationUpdateSchema(Schema):
     status: Optional[str] = None
     notes: Optional[str] = None
 
+class RefineChatMessageSchema(Schema):
+    role: Literal["user", "assistant"]
+    content: str
+
 class RefineSectionSchema(Schema):
     section_type: str
     current_content: Any
     instruction: str
+    conversation: List[RefineChatMessageSchema] = []
 
 class UpdateDocumentSchema(Schema):
     latex_source: str
@@ -201,6 +216,12 @@ def get_ai_settings(request: HttpRequest):
 
 @api.post("/ai/settings")
 def update_ai_settings(request: HttpRequest, data: AISettingsSchema):
+    if not data.ollama_endpoint.startswith(("http://", "https://")):
+        return api.create_response(request, {"error": "Ollama endpoint must use http:// or https://."}, status=400)
+    if not data.model_name.strip():
+        return api.create_response(request, {"error": "Model name is required."}, status=400)
+    if not 0 <= data.temperature <= 1:
+        return api.create_response(request, {"error": "Temperature must be between 0 and 1."}, status=400)
     user = get_current_user(request)
     settings, _ = UserAISettings.objects.get_or_create(user=user)
     settings.ollama_endpoint = data.ollama_endpoint
@@ -213,18 +234,23 @@ def update_ai_settings(request: HttpRequest, data: AISettingsSchema):
 
 @api.post("/ai/refine-section")
 def refine_section(request: HttpRequest, data: RefineSectionSchema):
+    if not data.instruction.strip():
+        return api.create_response(request, {"error": "A refinement instruction is required."}, status=400)
     user = get_current_user(request)
     ai_settings = getattr(user, 'ai_settings', None)
     endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
-    result = SectionEditor.refine_section(
-        section_type=data.section_type,
-        current_content=data.current_content,
-        instruction=data.instruction,
-        model_name=model,
-        base_url=endpoint
-    )
-    return result
+    try:
+        return SectionEditor.refine_section(
+            section_type=data.section_type,
+            current_content=data.current_content,
+            instruction=data.instruction,
+            conversation=[message.dict() for message in data.conversation],
+            model_name=model,
+            base_url=endpoint
+        )
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
 
 
 # -------------------------------------------------------------
@@ -319,6 +345,43 @@ def delete_skill(request: HttpRequest, skill_id: int):
     sk.delete()
     return {"status": "success"}
 
+@api.put("/master/skills")
+def replace_skills(request: HttpRequest, data: List[SkillSchema]):
+    user = get_current_user(request)
+    with transaction.atomic():
+        user.skills.all().delete()
+        Skill.objects.bulk_create([
+            Skill(
+                user=user,
+                category=item.category.strip() or "Technical Skills",
+                name=item.name.strip(),
+                proficiency=(item.proficiency or "").strip(),
+                order=index,
+            )
+            for index, item in enumerate(data)
+            if item.name.strip()
+        ])
+    return {"status": "success"}
+
+@api.put("/master/certifications")
+def replace_certifications(request: HttpRequest, data: List[CertificationSchema]):
+    user = get_current_user(request)
+    with transaction.atomic():
+        user.certifications.all().delete()
+        Certification.objects.bulk_create([
+            Certification(
+                user=user,
+                name=item.name.strip(),
+                issuer=(item.issuer or "").strip(),
+                issue_date=(item.issue_date or "").strip(),
+                credential_url=(item.credential_url or "").strip(),
+                order=index,
+            )
+            for index, item in enumerate(data)
+            if item.name.strip()
+        ])
+    return {"status": "success"}
+
 @api.post("/master/projects")
 def create_project(request: HttpRequest, data: ProjectSchema):
     user = get_current_user(request)
@@ -347,6 +410,11 @@ def delete_project(request: HttpRequest, proj_id: int):
 # -------------------------------------------------------------
 @api.post("/resumes/upload")
 def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
+    extension = file.name.lower().rsplit(".", 1)[-1] if "." in file.name else ""
+    if extension not in {"pdf", "docx", "txt"}:
+        return api.create_response(request, {"error": "Upload a PDF, DOCX, or TXT file."}, status=400)
+    if file.size > 15 * 1024 * 1024:
+        return api.create_response(request, {"error": "Resume files must be 15 MB or smaller."}, status=400)
     user = get_current_user(request)
     raw_text = ResumeParser.extract_text(file, file.name)
     if not raw_text.strip():
@@ -356,8 +424,11 @@ def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
     endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
 
-    parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, base_url=endpoint)
-    ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text)
+    try:
+        parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, base_url=endpoint)
+        ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text)
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
 
     return {
         "status": "success",
@@ -396,6 +467,8 @@ def list_jobs(request: HttpRequest):
 
 @api.post("/jobs")
 def create_job(request: HttpRequest, data: JobApplicationCreateSchema):
+    if not data.company_name.strip() or not data.job_title.strip():
+        return api.create_response(request, {"error": "Company and job title are required."}, status=400)
     user = get_current_user(request)
     app = JobApplication.objects.create(
         user=user,
@@ -429,6 +502,7 @@ def get_job_detail(request: HttpRequest, job_id: int):
         "raw_description": app.raw_description,
         "status": app.status,
         "match_score": app.match_score,
+        "extracted_keywords": app.extracted_keywords,
         "notes": app.notes,
         "documents": docs,
     }
@@ -455,7 +529,10 @@ def delete_job(request: HttpRequest, job_id: int):
 def tailor_for_job(request: HttpRequest, job_id: int):
     user = get_current_user(request)
     app = get_object_or_404(JobApplication, id=job_id, user=user)
-    result = TailorService.tailor_for_job(user=user, application=app)
+    try:
+        result = TailorService.tailor_for_job(user=user, application=app)
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
     return {"status": "success", "result": result}
 
 @api.put("/documents/{int:doc_id}")
@@ -470,7 +547,23 @@ def update_document(request: HttpRequest, doc_id: int, data: UpdateDocumentSchem
 def export_latex(request: HttpRequest, doc_id: int):
     user = get_current_user(request)
     doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
-    filename = f"{doc.application.company_name}_{doc.doc_type}.tex".replace(" ", "_")
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}.tex")
     response = HttpResponse(doc.latex_source, content_type="application/x-tex")
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+@api.get("/documents/{int:doc_id}/export-pdf")
+def export_pdf(request: HttpRequest, doc_id: int):
+    user = get_current_user(request)
+    doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
+    try:
+        pdf = LatexCompiler.compile_pdf(doc.latex_source)
+    except RuntimeError as exc:
+        return api.create_response(request, {"error": str(exc)}, status=503)
+    except ValueError as exc:
+        return api.create_response(request, {"error": str(exc)}, status=422)
+
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}.pdf")
+    response = HttpResponse(pdf, content_type="application/pdf")
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response

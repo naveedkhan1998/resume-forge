@@ -44,6 +44,15 @@ export interface Skill {
   order?: number;
 }
 
+export interface Certification {
+  id?: number;
+  name: string;
+  issuer?: string;
+  issue_date?: string;
+  credential_url?: string;
+  order?: number;
+}
+
 export interface Project {
   id?: number;
   title: string;
@@ -83,6 +92,7 @@ export interface JobApplication {
   raw_description?: string;
   status: 'saved' | 'applied' | 'interviewing' | 'offer' | 'rejected';
   match_score?: number | null;
+  extracted_keywords?: string[];
   notes?: string;
   created_at: string;
   documents_count?: number;
@@ -95,5 +105,5 @@ export interface MasterContext {
   educations: Education[];
   skills: Skill[];
   projects: Project[];
-  certifications?: any[];
+  certifications: Certification[];
 }

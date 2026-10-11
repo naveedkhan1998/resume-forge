@@ -1,4 +1,4 @@
-import { MasterContext, Profile, Experience, Education, Skill, Project, JobApplication, AISettings } from '../types';
+import { MasterContext, Profile, Experience, Education, Skill, Project, Certification, JobApplication, AISettings } from '../types';
 
 const API_BASE = '/api';
 
@@ -50,7 +50,12 @@ export const api = {
     return handleResponse(res);
   },
 
-  async refineSection(sectionType: string, currentContent: any, instruction: string) {
+  async refineSection(
+    sectionType: string,
+    currentContent: unknown,
+    instruction: string,
+    conversation: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  ) {
     const res = await fetch(`${API_BASE}/ai/refine-section`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,6 +63,7 @@ export const api = {
         section_type: sectionType,
         current_content: currentContent,
         instruction,
+        conversation,
       }),
     });
     return handleResponse(res);
@@ -112,6 +118,15 @@ export const api = {
     return handleResponse(res);
   },
 
+  async updateEducation(id: number, edu: Education) {
+    const res = await fetch(`${API_BASE}/master/educations/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(edu),
+    });
+    return handleResponse(res);
+  },
+
   async deleteEducation(id: number) {
     const res = await fetch(`${API_BASE}/master/educations/${id}`, {
       method: 'DELETE',
@@ -135,9 +150,36 @@ export const api = {
     return handleResponse(res);
   },
 
+  async replaceSkills(skills: Skill[]) {
+    const res = await fetch(`${API_BASE}/master/skills`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(skills),
+    });
+    return handleResponse(res);
+  },
+
+  async replaceCertifications(certifications: Certification[]) {
+    const res = await fetch(`${API_BASE}/master/certifications`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(certifications),
+    });
+    return handleResponse(res);
+  },
+
   async createProject(proj: Project) {
     const res = await fetch(`${API_BASE}/master/projects`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(proj),
+    });
+    return handleResponse(res);
+  },
+
+  async updateProject(id: number, proj: Project) {
+    const res = await fetch(`${API_BASE}/master/projects/${id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proj),
     });
@@ -212,5 +254,14 @@ export const api = {
       body: JSON.stringify({ latex_source }),
     });
     return handleResponse(res);
+  },
+
+  async downloadDocumentPdf(docId: number): Promise<Blob> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/export-pdf`);
+    if (!res.ok) {
+      await handleResponse(res);
+      throw new Error('Could not compile PDF.');
+    }
+    return res.blob();
   },
 };

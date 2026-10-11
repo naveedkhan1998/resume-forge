@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nx run-many -t serve -p web api --parallel",
     "dev:web": "nx serve web",
-    "dev:api": "nx serve api",
+    "dev:api": "nx run api:serve",
+    "dev:api:local": "nx run api:serve-local",
     "build": "nx run-many -t build",
     "build:web": "nx build web",
     "migrate": "nx run api:migrate",

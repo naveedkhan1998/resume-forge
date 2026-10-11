@@ -82,9 +82,10 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
   return (
     <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6">
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Ollama & AI Settings</h1>
+        <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Local intelligence</p>
+        <h1 className="text-3xl font-bold text-slate-950 tracking-tight">Tune for the model you actually run</h1>
         <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-          Configure your local or remote Ollama server. Connect to any model for parsing and resume tailoring.
+          Smaller models work best with low temperature, clear instructions, and a warm Ollama connection.
         </p>
       </div>
 
@@ -177,8 +178,8 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
               className="w-full accent-indigo-600 cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>Precise / Strict (0.1)</span>
-              <span>Balanced (0.7)</span>
+              <span>Recommended for resumes (0.1–0.3)</span>
+              <span>Balanced (0.5)</span>
               <span>Creative (1.0)</span>
             </div>
           </div>
@@ -195,6 +196,7 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
               placeholder="e.g., 'Always emphasize cloud and distributed systems impact. Avoid fluff words.'"
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
             />
+            <p className="mt-1 text-[11px] text-slate-400">Applied during job tailoring. Instructions can change emphasis, but the model is still required to preserve factual accuracy.</p>
           </div>
 
           {/* Status Message */}

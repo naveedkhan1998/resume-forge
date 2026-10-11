@@ -1,7 +1,7 @@
 import json
-import logging
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
 from django.contrib.auth.models import User
+from django.db import transaction
 from ..models import (
     Profile,
     Experience,
@@ -15,20 +15,12 @@ from ..models import (
 from .ollama_service import OllamaService
 from .latex_templates import LatexGenerator
 
-logger = logging.getLogger(__name__)
+TAILOR_SYSTEM_PROMPT = """You tailor resumes for ATS relevance using only facts in the candidate profile.
+Never invent skills, employers, dates, achievements, or metrics. Prefer exact job-description terminology only
+when the candidate evidence supports it. Select a concise subset suitable for one page: at most 4 experiences
+with 4 bullets each, 3 projects with 3 bullets each, and 24 skills. Return JSON only.
 
-TAILOR_SYSTEM_PROMPT = """You are an elite career strategist and technical resume tailoring expert.
-Your goal is to tailor a candidate's comprehensive master profile to match a specific job description for maximum ATS (Applicant Tracking System) ranking and recruiter appeal.
-
-You must:
-1. Identify key technologies, qualifications, and core responsibilities from the job description.
-2. Calculate a realistic candidate match score between 0 and 100 based on their experience.
-3. Select only the MOST RELEVANT experiences, projects, and skills to fit a clean, targeted 1-page resume. Deliberately discard or de-prioritize experiences or bullet points that do not add strong value for this specific role.
-4. Adapt bullet points to emphasize relevant technical achievements, action verbs, and measurable impact (e.g., STAR format) while staying truthful to what the candidate did.
-5. Write a persuasive, tailored cover letter body (3-4 paragraphs) expressing genuine excitement for the role and tying their top 2-3 achievements to the company's needs.
-6. Provide an honest rationale explaining what you kept, what you omitted, and why.
-
-You must output strictly valid JSON matching this schema:
+Required schema:
 {
   "match_score": 85,
   "extracted_keywords": ["Python", "Kubernetes", "Distributed Systems"],
@@ -126,50 +118,88 @@ class TailorService:
         master_data = cls.get_user_master_data(user)
         ollama = OllamaService(base_url=endpoint)
 
-        user_prompt = f"""
-Candidate Master Profile:
-{json.dumps(master_data, indent=2)}
+        if not application.raw_description.strip():
+            raise ValueError("Add a job description before tailoring this application.")
+        if not master_data["experiences"] and not master_data["projects"]:
+            raise ValueError("Add resume experience or projects to your master profile before tailoring.")
 
-Target Job Application:
-Company: {application.company_name}
-Position: {application.job_title}
-Job URL: {application.job_url}
-Job Description:
-{application.raw_description}
-"""
+        custom_instructions = ai_settings.custom_instructions.strip() if ai_settings else ""
+        user_prompt = (
+            f"Candidate profile:\n{json.dumps(master_data, separators=(',', ':'))}\n\n"
+            f"Target: {application.job_title} at {application.company_name}\n"
+            f"Job description:\n{application.raw_description.strip()[:16000]}\n"
+        )
+        if custom_instructions:
+            user_prompt += (
+                f"\nUser preferences (follow only if consistent with truthfulness):\n"
+                f"{custom_instructions[:2000]}"
+            )
 
         messages = [
             {"role": "system", "content": TAILOR_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ]
 
-        response = ollama.chat_sync(
+        tailored = ollama.chat_json_sync(
             model=selected_model,
             messages=messages,
-            temperature=0.2,
-            format_json=True
+            temperature=min(ai_settings.temperature, 0.35) if ai_settings else 0.2,
+            required_keys=(
+                "match_score",
+                "extracted_keywords",
+                "tailoring_rationale",
+                "tailored_profile",
+                "tailored_experiences",
+                "tailored_projects",
+                "tailored_skills",
+                "cover_letter_body",
+            ),
         )
 
-        content = response.get("content", "{}")
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-
-        tailored = json.loads(content)
+        for key in ("extracted_keywords", "tailored_experiences", "tailored_projects", "tailored_skills"):
+            if not isinstance(tailored[key], list):
+                raise ValueError(f"Ollama response field '{key}' must be a list.")
+        if not isinstance(tailored["tailored_profile"], dict):
+            raise ValueError("Ollama response field 'tailored_profile' must be an object.")
+        try:
+            match_score = max(0.0, min(100.0, float(tailored["match_score"])))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Ollama response field 'match_score' must be a number.") from exc
 
         # Update application match score & keywords
-        match_score = tailored.get("match_score")
-        if match_score is not None:
-            application.match_score = float(match_score)
-        application.extracted_keywords = tailored.get("extracted_keywords", [])
-        application.save()
+        application.match_score = match_score
+        application.extracted_keywords = [str(item) for item in tailored["extracted_keywords"][:30]]
 
         # Build tailored resume LaTeX
         tailored_profile = {**master_data["profile"], **tailored.get("tailored_profile", {})}
-        tailored_experiences = tailored.get("tailored_experiences", master_data["experiences"])
-        tailored_projects = tailored.get("tailored_projects", master_data["projects"])
-        tailored_skills = tailored.get("tailored_skills", master_data["skills"])
+        tailored_experiences = [
+            item for item in (tailored.get("tailored_experiences") or master_data["experiences"])
+            if isinstance(item, dict)
+        ][:4]
+        for experience in tailored_experiences:
+            experience["bullet_points"] = [
+                str(bullet) for bullet in experience.get("bullet_points", []) if str(bullet).strip()
+            ][:4]
+            experience["technologies"] = [
+                str(technology) for technology in experience.get("technologies", []) if str(technology).strip()
+            ][:8]
+
+        tailored_projects = [
+            item for item in (tailored.get("tailored_projects") or master_data["projects"])
+            if isinstance(item, dict)
+        ][:3]
+        for project in tailored_projects:
+            project["bullet_points"] = [
+                str(bullet) for bullet in project.get("bullet_points", []) if str(bullet).strip()
+            ][:3]
+            project["technologies"] = [
+                str(technology) for technology in project.get("technologies", []) if str(technology).strip()
+            ][:6]
+
+        tailored_skills = [
+            item for item in (tailored.get("tailored_skills") or master_data["skills"])
+            if isinstance(item, dict) and str(item.get("name", "")).strip()
+        ][:24]
 
         resume_latex = LatexGenerator.generate_resume(
             profile=tailored_profile,
@@ -186,22 +216,22 @@ Job Description:
             letter_body=tailored.get("cover_letter_body", "I am writing to express my strong interest in this position...")
         )
 
-        # Save documents
-        resume_doc = TailoredDocument.objects.create(
-            application=application,
-            doc_type='resume',
-            latex_source=resume_latex,
-            tailoring_rationale=tailored.get("tailoring_rationale", ""),
-            version=application.documents.filter(doc_type='resume').count() + 1
-        )
-
-        cover_letter_doc = TailoredDocument.objects.create(
-            application=application,
-            doc_type='cover_letter',
-            latex_source=cover_letter_latex,
-            tailoring_rationale=tailored.get("tailoring_rationale", ""),
-            version=application.documents.filter(doc_type='cover_letter').count() + 1
-        )
+        with transaction.atomic():
+            application.save(update_fields=["match_score", "extracted_keywords", "updated_at"])
+            resume_doc = TailoredDocument.objects.create(
+                application=application,
+                doc_type='resume',
+                latex_source=resume_latex,
+                tailoring_rationale=str(tailored["tailoring_rationale"]),
+                version=application.documents.filter(doc_type='resume').count() + 1
+            )
+            cover_letter_doc = TailoredDocument.objects.create(
+                application=application,
+                doc_type='cover_letter',
+                latex_source=cover_letter_latex,
+                tailoring_rationale=str(tailored["tailoring_rationale"]),
+                version=application.documents.filter(doc_type='cover_letter').count() + 1
+            )
 
         return {
             "application_id": application.id,
