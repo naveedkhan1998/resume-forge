@@ -354,9 +354,10 @@ def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
 
     return {
         "status": "success",
-        "message": f"Resume parsed and imported into master profile",
+        "message": "Resume parsed and imported into master profile",
         "parsed_summary": {
             "name": parsed_data.get("profile", {}).get("full_name"),
+            "profile": parsed_data.get("profile", {}),
             "experiences_count": len(parsed_data.get("experiences", [])),
             "educations_count": len(parsed_data.get("educations", [])),
             "skills_count": len(parsed_data.get("skills", [])),

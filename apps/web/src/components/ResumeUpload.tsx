@@ -106,12 +106,60 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
         )}
 
         {result && (
-          <div className="mt-6 p-6 rounded-xl bg-emerald-50/80 border border-emerald-200">
-            <div className="flex items-center gap-2 text-emerald-800 font-semibold mb-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              Resume Parsed Successfully!
+          <div className="mt-6 p-6 rounded-xl bg-emerald-50/80 border border-emerald-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-base">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                Resume Parsed Successfully!
+              </div>
+              <button
+                onClick={onUploadSuccess}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
+              >
+                View in Master Context <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
+
+            {/* Candidate Identity & Contact Preview */}
+            <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-2xs space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-100 pb-2">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {result.parsed_summary?.name || 'Parsed Candidate'}
+                  </h3>
+                  {result.parsed_summary?.profile?.headline && (
+                    <p className="text-xs text-slate-600 font-medium mt-0.5">
+                      {result.parsed_summary.profile.headline}
+                    </p>
+                  )}
+                </div>
+                {result.parsed_summary?.profile?.location && (
+                  <span className="text-xs text-slate-500 font-medium">
+                    📍 {result.parsed_summary.profile.location}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 pt-1">
+                {result.parsed_summary?.profile?.email && (
+                  <span>✉️ {result.parsed_summary.profile.email}</span>
+                )}
+                {result.parsed_summary?.profile?.phone && (
+                  <span>📞 {result.parsed_summary.profile.phone}</span>
+                )}
+                {result.parsed_summary?.profile?.linkedin_url && (
+                  <span>🔗 {result.parsed_summary.profile.linkedin_url}</span>
+                )}
+                {result.parsed_summary?.profile?.github_url && (
+                  <span>🐙 {result.parsed_summary.profile.github_url}</span>
+                )}
+                {result.parsed_summary?.profile?.website_url && (
+                  <span>🌐 {result.parsed_summary.profile.website_url}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
               <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
                 <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.experiences_count || 0}</p>
                 <p className="text-xs text-slate-500">Experiences</p>

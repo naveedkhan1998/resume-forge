@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MasterContext,
   Profile,
@@ -38,6 +38,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [profile, setProfile] = useState<Profile>(context.profile);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+
+  // Synchronize local form state whenever context.profile updates from API/Upload
+  useEffect(() => {
+    if (context.profile) {
+      setProfile(context.profile);
+    }
+  }, [context.profile]);
 
   // AI Refine Modal state
   const [refineModalOpen, setRefineModalOpen] = useState(false);
