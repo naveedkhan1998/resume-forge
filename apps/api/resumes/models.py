@@ -142,7 +142,7 @@ class JobApplication(models.Model):
     company_name = models.CharField(max_length=255)
     job_title = models.CharField(max_length=255)
     job_url = models.CharField(max_length=500, blank=True, default='')
-    raw_description = models.TextField()
+    raw_description = models.TextField(blank=True, default='')
     extracted_keywords = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='saved')
     match_score = models.FloatField(null=True, blank=True)

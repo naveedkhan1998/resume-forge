@@ -121,7 +121,7 @@ class JobApplicationCreateSchema(Schema):
     company_name: str
     job_title: str
     job_url: Optional[str] = ""
-    raw_description: str
+    raw_description: Optional[str] = ""
     notes: Optional[str] = ""
 
 class JobApplicationUpdateSchema(Schema):
