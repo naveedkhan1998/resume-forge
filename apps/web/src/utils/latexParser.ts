@@ -45,19 +45,22 @@ function cleanLatexUrl(url: string): string {
 }
 
 function extractLinks(text: string): ParsedLink[] {
-  const links: ParsedLink[] = [];
-  const hrefRegex = /\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = hrefRegex.exec(text)) !== null) {
-    links.push({ url: cleanLatexUrl(match[1]), label: cleanLatex(match[2]) });
-  }
-  return links;
+  return extractCommandArguments(text, '\\href', 2).map(([url, label]) => ({
+    url: cleanLatexUrl(url),
+    label: cleanLatex(label),
+  }));
 }
 
-function extractCommandArguments(source: string, command: string, count: number): string[][] {
-  const results: string[][] = [];
+interface CommandOccurrence {
+  args: string[];
+  index: number;
+}
+
+function extractCommandOccurrences(source: string, command: string, count: number): CommandOccurrence[] {
+  const results: CommandOccurrence[] = [];
   let cursor = 0;
   while ((cursor = source.indexOf(command, cursor)) >= 0) {
+    const commandIndex = cursor;
     let position = cursor + command.length;
     const args: string[] = [];
     while (args.length < count) {
@@ -73,17 +76,21 @@ function extractCommandArguments(source: string, command: string, count: number)
       if (depth !== 0) break;
       args.push(source.slice(start, position - 1));
     }
-    if (args.length === count) results.push(args);
+    if (args.length === count) results.push({ args, index: commandIndex });
     cursor = Math.max(position, cursor + command.length);
   }
   return results;
+}
+
+function extractCommandArguments(source: string, command: string, count: number): string[][] {
+  return extractCommandOccurrences(source, command, count).map(({ args }) => args);
 }
 
 // Clean LaTeX escaping & formatting commands into readable text
 export function cleanLatex(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\\href\{[^}]*\}\{([^}]*)\}/g, '$1') // Extract text from \href{url}{text}
+    .replace(/\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g, '$2')
     .replace(/\\textbf\{([^}]*)\}/g, '$1')
     .replace(/\\textit\{([^}]*)\}/g, '$1')
     .replace(/\\emph\{([^}]*)\}/g, '$1')
@@ -102,6 +109,7 @@ export function cleanLatex(text: string): string {
     .replace(/\\textasciicircum\{\}/g, '^')
     .replace(/\\textbackslash\{\}/g, '\\')
     .replace(/\\enspace/g, ' ')
+    .replace(/\\(?:small|normalsize|raggedright|textnormal)\b/g, '')
     .replace(/\\textbar/g, '|')
     .replace(/--/g, '–')
     .replace(/\\vspace\{[^}]*\}/g, '')
@@ -175,35 +183,45 @@ function parseResume(source: string): ParsedDocument {
       items: [],
     };
 
-    // Subheadings: \resumeSubheading{arg1}{arg2}{arg3}{arg4}
-    for (const args of extractCommandArguments(sectionBody, '\\resumeSubheading', 4)) {
-      section.items.push({
-        type: 'subheading',
-        title: cleanLatex(args[0]),
-        date: cleanLatex(args[1]),
-        subtitle: cleanLatex(args[2]),
-        location: cleanLatex(args[3]),
-      });
-    }
+    const orderedCommands = [
+      ...extractCommandOccurrences(sectionBody, '\\resumeSubheading', 4).map((occurrence) => ({
+        ...occurrence,
+        command: 'subheading' as const,
+      })),
+      ...extractCommandOccurrences(sectionBody, '\\resumeProjectHeading', 2).map((occurrence) => ({
+        ...occurrence,
+        command: 'project' as const,
+      })),
+      ...extractCommandOccurrences(sectionBody, '\\resumeItem', 1).map((occurrence) => ({
+        ...occurrence,
+        command: 'bullet' as const,
+      })),
+    ].sort((left, right) => left.index - right.index);
 
-    for (const args of extractCommandArguments(sectionBody, '\\resumeProjectHeading', 2)) {
-      const headingParts = args[0].split(/\$\|\$|\||\\textbar/);
-      const title = cleanLatex(headingParts[0] || '');
-      const subtitle = cleanLatex(headingParts[1] || '');
-      section.items.push({
-        type: 'project',
-        title,
-        subtitle,
-        date: cleanLatex(args[1]),
-        links: extractLinks(args[0]),
-      });
-    }
-
-    for (const args of extractCommandArguments(sectionBody, '\\resumeItem', 1)) {
-      section.items.push({
-        type: 'bullet',
-        content: cleanLatex(args[0]),
-      });
+    for (const { args, command } of orderedCommands) {
+      if (command === 'subheading') {
+        section.items.push({
+          type: 'subheading',
+          title: cleanLatex(args[0]),
+          date: cleanLatex(args[1]),
+          subtitle: cleanLatex(args[2]),
+          location: cleanLatex(args[3]),
+        });
+      } else if (command === 'project') {
+        const headingParts = args[0].split(/\$\|\$|\||\\textbar/);
+        section.items.push({
+          type: 'project',
+          title: cleanLatex(headingParts[0] || ''),
+          subtitle: cleanLatex(headingParts[1] || ''),
+          date: cleanLatex(args[1]),
+          links: extractLinks(args[0]),
+        });
+      } else {
+        section.items.push({
+          type: 'bullet',
+          content: cleanLatex(args[0]),
+        });
+      }
     }
 
     // Skills: \textbf{Category}: Skill1, Skill2
@@ -228,6 +246,16 @@ function parseResume(source: string): ParsedDocument {
       }
     }
 
+    const groupedItems: ParsedResumeItem[] = [];
+    for (const item of section.items) {
+      const previous = groupedItems[groupedItems.length - 1];
+      if (item.type === 'bullet' && previous?.type === 'bullet') {
+        previous.content = `${previous.content || ''}\n${item.content || ''}`;
+      } else {
+        groupedItems.push(item);
+      }
+    }
+    section.items = groupedItems;
     doc.sections.push(section);
   }
 

@@ -234,8 +234,10 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
 
                       if (item.type === 'bullet') {
                         return (
-                          <ul key={itemIdx} className="list-disc pl-4 space-y-1 text-slate-800 text-[11px] leading-relaxed">
-                            <li>{item.content}</li>
+                          <ul key={itemIdx} className="list-disc pl-4 space-y-0.5 text-slate-800 text-[11px] leading-snug">
+                            {(item.content || '').split('\n').filter(Boolean).map((bullet, bulletIndex) => (
+                              <li key={bulletIndex}>{bullet}</li>
+                            ))}
                           </ul>
                         );
                       }

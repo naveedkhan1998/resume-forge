@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .latex_templates import validate_latex_document
+from .latex_templates import RESUMEFORGE_CLASS, validate_latex_document
 
 
 class LatexCompiler:
@@ -22,6 +22,7 @@ class LatexCompiler:
             workdir = Path(temp_dir)
             tex_path = workdir / "document.tex"
             tex_path.write_text(latex_source, encoding="utf-8")
+            (workdir / "resumeforge.cls").write_text(RESUMEFORGE_CLASS, encoding="utf-8")
             try:
                 result = subprocess.run(
                     [
