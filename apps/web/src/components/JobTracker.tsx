@@ -16,7 +16,9 @@ import {
   Save,
   CheckCircle2,
   TrendingUp,
+  Eye,
 } from 'lucide-react';
+import { LatexDocumentPreview } from './LatexDocumentPreview';
 
 interface JobTrackerProps {
   activeModel: string;
@@ -43,6 +45,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   // Active doc tab: 'resume' | 'cover_letter'
   const [activeDocType, setActiveDocType] = useState<'resume' | 'cover_letter'>('resume');
   const [editableLatex, setEditableLatex] = useState('');
+  const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
 
   const loadJobs = async () => {
     setLoading(true);
@@ -289,8 +292,9 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
               {/* Document Tabs & Editor */}
               {selectedJob.documents && selectedJob.documents.length > 0 ? (
                 <div className="space-y-4">
-                  {/* Tabs */}
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  {/* Tabs: Document Type & View Mode */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                    {/* Document Selector */}
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setActiveDocType('resume')}
@@ -300,7 +304,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                             : 'text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        <FileCode className="w-3.5 h-3.5" /> Tailored Resume (.tex)
+                        <FileCode className="w-3.5 h-3.5" /> Tailored Resume
                       </button>
                       <button
                         onClick={() => setActiveDocType('cover_letter')}
@@ -310,46 +314,85 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                             : 'text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        <FileCode className="w-3.5 h-3.5" /> Cover Letter (.tex)
+                        <FileCode className="w-3.5 h-3.5" /> Cover Letter
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* View Mode Toggle: Visual Preview vs LaTeX Code */}
+                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/80">
                       <button
-                        onClick={handleCopyLatex}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                        title="Copy to Clipboard"
+                        onClick={() => setViewMode('preview')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          viewMode === 'preview'
+                            ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
                       >
-                        {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copied ? 'Copied' : 'Copy'}
+                        <Eye className="w-3.5 h-3.5" /> Live Preview & PDF
                       </button>
                       <button
-                        onClick={handleDownloadTex}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                        title="Download .tex"
+                        onClick={() => setViewMode('code')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          viewMode === 'code'
+                            ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
                       >
-                        <Download className="w-3.5 h-3.5" /> .tex
-                      </button>
-                      <button
-                        onClick={handleSaveLatex}
-                        className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors"
-                      >
-                        {savedDoc ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
-                        {savedDoc ? 'Saved' : 'Save'}
+                        <FileCode className="w-3.5 h-3.5" /> LaTeX Source (.tex)
                       </button>
                     </div>
                   </div>
 
-                  {/* LaTeX Source Code Editor */}
-                  <div className="relative">
-                    <textarea
-                      rows={22}
-                      value={editableLatex}
-                      onChange={(e) => setEditableLatex(e.target.value)}
-                      className="w-full font-mono text-xs p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 leading-relaxed focus:outline-indigo-500 shadow-inner"
-                      placeholder="% LaTeX source code..."
+                  {/* Body: Preview Mode vs Code Mode */}
+                  {viewMode === 'preview' ? (
+                    <LatexDocumentPreview
+                      latexSource={editableLatex}
+                      docType={activeDocType}
+                      companyName={selectedJob.company_name}
                     />
-                  </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500 font-medium">
+                          Directly edit the LaTeX source code. Changes will reflect in live preview upon saving.
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleCopyLatex}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                            title="Copy to Clipboard"
+                          >
+                            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copied ? 'Copied' : 'Copy'}
+                          </button>
+                          <button
+                            onClick={handleDownloadTex}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                            title="Download .tex"
+                          >
+                            <Download className="w-3.5 h-3.5" /> .tex
+                          </button>
+                          <button
+                            onClick={handleSaveLatex}
+                            className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors"
+                          >
+                            {savedDoc ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
+                            {savedDoc ? 'Saved' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="relative">
+                        <textarea
+                          rows={24}
+                          value={editableLatex}
+                          onChange={(e) => setEditableLatex(e.target.value)}
+                          className="w-full font-mono text-xs p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 leading-relaxed focus:outline-indigo-500 shadow-inner"
+                          placeholder="% LaTeX source code..."
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-12 text-center rounded-2xl bg-slate-50 border border-dashed border-slate-200 space-y-3">
