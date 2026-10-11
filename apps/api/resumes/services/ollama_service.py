@@ -6,8 +6,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 class OllamaService:
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, timeout: Optional[float] = None):
         self.base_url = (base_url or getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434')).rstrip('/')
+        self.timeout = timeout or getattr(settings, 'OLLAMA_TIMEOUT', 600.0)
 
     async def check_health(self) -> Dict[str, Any]:
         """Check if Ollama server is reachable."""
@@ -55,7 +56,8 @@ class OllamaService:
         if format_json:
             payload["format"] = "json"
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        client_timeout = httpx.Timeout(self.timeout, connect=30.0)
+        async with httpx.AsyncClient(timeout=client_timeout) as client:
             res = await client.post(f"{self.base_url}/api/chat", json=payload)
             res.raise_for_status()
             data = res.json()
@@ -80,7 +82,8 @@ class OllamaService:
         if format_json:
             payload["format"] = "json"
 
-        with httpx.Client(timeout=120.0) as client:
+        client_timeout = httpx.Timeout(self.timeout, connect=30.0)
+        with httpx.Client(timeout=client_timeout) as client:
             res = client.post(f"{self.base_url}/api/chat", json=payload)
             res.raise_for_status()
             data = res.json()
