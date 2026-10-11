@@ -1,0 +1,30 @@
+[project]
+name = "resume-builder-api"
+version = "0.1.0"
+description = "Backend API for AI Resume Builder & Job Application Tracker"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.1.0",
+    "django-ninja>=1.3.0",
+    "django-cors-headers>=4.4.0",
+    "psycopg[binary]>=3.2.0",
+    "pgvector>=0.3.0",
+    "pydantic>=2.9.0",
+    "httpx>=0.27.0",
+    "ollama>=0.3.0",
+    "pypdf>=5.0.0",
+    "pdfplumber>=0.11.0",
+    "python-docx>=1.1.0",
+    "python-dotenv>=1.0.1",
+    "celery>=5.4.0",
+    "redis>=5.1.0",
+    "jinja2>=3.1.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["config"]

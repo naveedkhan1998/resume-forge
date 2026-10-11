@@ -1,0 +1,37 @@
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_SYSTEM_PYTHON=1
+
+WORKDIR /app
+
+# Install system dependencies & Tectonic LaTeX engine
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    libpq-dev \
+    gcc \
+    git \
+    fontconfig \
+    libharfbuzz0b \
+    libfontconfig1 \
+    libgraphite2-3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Tectonic standalone binary
+RUN curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.tectonic-typesetting.net | sh \
+    && mv tectonic /usr/local/bin/
+
+# Install uv for fast Python package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Copy project files and install dependencies
+COPY apps/api/pyproject.toml apps/api/README.md /app/apps/api/
+RUN uv pip install -e /app/apps/api
+
+# Copy backend code
+COPY apps/api /app/apps/api
+
+EXPOSE 8000
+CMD ["python", "apps/api/manage.py", "runserver", "0.0.0.0:8000"]

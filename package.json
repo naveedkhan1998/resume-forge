@@ -1,0 +1,48 @@
+{
+  "name": "@resume-builder/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "dev": "nx run-many -t serve -p web api --parallel",
+    "dev:web": "nx serve web",
+    "dev:api": "nx serve api",
+    "build": "nx run-many -t build",
+    "build:web": "nx build web",
+    "migrate": "nx run api:migrate",
+    "makemigrations": "nx run api:makemigrations",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "private": true,
+  "devDependencies": {
+    "@nx/js": "23.3.0",
+    "@nx/react": "^23.3.0",
+    "@nx/vite": "^23.3.0",
+    "@nx/web": "23.3.0",
+    "@nx/workspace": "23.3.0",
+    "@swc/helpers": "~0.5.18",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "autoprefixer": "^10.6.1",
+    "jiti": "2.4.2",
+    "nx": "23.3.0",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^4.3.3",
+    "tslib": "^2.3.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.0",
+    "vite-tsconfig-paths": "^6.1.1"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.55.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "6.30.3",
+    "tailwind-merge": "^3.7.0"
+  }
+}

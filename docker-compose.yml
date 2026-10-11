@@ -1,0 +1,90 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: resume_builder_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-resumebuilder}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-resumebuilder}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: resume_builder_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional backend container (for full Docker dev or deployment)
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: resume_builder_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-resumebuilder}
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-key-change-in-production}
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./media:/app/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: python apps/api/manage.py runserver 0.0.0.0:8000
+    profiles: ["full"]
+
+  # Celery worker container for background AI processing & PDF compilation
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: resume_builder_worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DEBUG=1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-resumebuilder}
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-key-change-in-production}
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./media:/app/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: celery -A config worker -l info
+    profiles: ["full"]
+
+volumes:
+  pgdata:
+  redisdata:
