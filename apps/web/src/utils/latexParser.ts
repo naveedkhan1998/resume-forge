@@ -224,15 +224,19 @@ function parseResume(source: string): ParsedDocument {
       }
     }
 
-    // Skills: \textbf{Category}: Skill1, Skill2
-    const skillRegex = /\\textbf\{([^}]+)\}:\s*([^\\]+)/g;
+    // Skills: \textbf{Category}: Skill1, Skill2 or \textbf{Category}{: Skill1, Skill2}
+    const skillRegex = /\\textbf\{([^}]+)\}(?::|\{:|\{:\}|\s*:)\s*([^\n\\]+)/g;
     let skillMatch;
     while ((skillMatch = skillRegex.exec(sectionBody)) !== null) {
-      section.items.push({
-        type: 'skill_group',
-        title: cleanLatex(skillMatch[1]),
-        content: cleanLatex(skillMatch[2]),
-      });
+      const rawCat = cleanLatex(skillMatch[1]);
+      const rawContent = cleanLatex(skillMatch[2]).replace(/^\{:\}\s*/, '').replace(/\}\s*$/, '').trim();
+      if (rawCat && rawContent) {
+        section.items.push({
+          type: 'skill_group',
+          title: rawCat,
+          content: rawContent,
+        });
+      }
     }
 
     // Professional Summary or free paragraph

@@ -9,6 +9,7 @@ import {
   Certification,
 } from '../types';
 import { api } from '../services/api';
+import { diffLines } from '../utils/diff';
 import {
   User,
   Briefcase,
@@ -26,6 +27,9 @@ import {
   Award,
   Send,
   RotateCcw,
+  AlertTriangle,
+  ListChecks,
+  GitCompare,
 } from 'lucide-react';
 
 interface MasterProfileProps {
@@ -82,6 +86,15 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [refineError, setRefineError] = useState<string | null>(null);
   const [refineConfirmOpen, setRefineConfirmOpen] = useState(false);
   const [savingRefine, setSavingRefine] = useState(false);
+  const [refinePanel, setRefinePanel] = useState<'draft' | 'diff'>('draft');
+
+  // Reset / delete all data state
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetApplications, setResetApplications] = useState(true);
+  const [resetAiSettings, setResetAiSettings] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // New Experience Modal state
   const [newExpOpen, setNewExpOpen] = useState(false);
@@ -185,6 +198,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     setRefineExplanation('');
     setRefineError(null);
     setRefineConfirmOpen(false);
+    setRefinePanel('draft');
     setRefineModalOpen(true);
   };
 
@@ -334,14 +348,62 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     }
   };
 
+  const handleResetAllData = async () => {
+    setResetting(true);
+    setResetError(null);
+    try {
+      await api.resetAllData({
+        confirm: resetConfirmText.trim(),
+        delete_applications: resetApplications,
+        delete_ai_settings: resetAiSettings,
+      });
+      setResetOpen(false);
+      setResetConfirmText('');
+      setProfile({
+        full_name: '',
+        headline: '',
+        email: '',
+        phone: '',
+        location: '',
+        website_url: '',
+        linkedin_url: '',
+        github_url: '',
+        summary: '',
+      });
+      onRefresh();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Could not reset your data.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const refineDiff = diffLines(contentItems(refineOriginalContent), contentItems(refineDraftContent));
+  const refineChangeCount = refineDiff.added + refineDiff.removed + refineDiff.changed;
+
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-8">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Master Career Context</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Your exhaustive source-of-truth career history. Edit manually or iterate each section with chat prompts using <strong>{activeModel}</strong>.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Master Career Context</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Your exhaustive source-of-truth career history. Edit manually or iterate each section with chat prompts using <strong>{activeModel}</strong>.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setResetConfirmText('');
+            setResetError(null);
+            setResetApplications(true);
+            setResetAiSettings(false);
+            setResetOpen(true);
+          }}
+          className="flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 shadow-xs transition-colors hover:bg-rose-50"
+        >
+          <Trash2 className="h-4 w-4" />
+          Reset profile & delete all data
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -803,166 +865,399 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
       {/* AI Refine Chat Modal */}
       {refineModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2 font-semibold text-slate-900">
-                <Sparkles className="w-5 h-5 text-violet-600" />
-                <span>AI Section Chat ({activeModel})</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6">
+          <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div>
+                <div className="flex items-center gap-2 font-semibold text-slate-900">
+                  <Sparkles className="h-5 w-5 text-violet-600" />
+                  <span>AI Section Chat</span>
+                  <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+                    {activeModel}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Editing <span className="font-semibold text-slate-700">{refineTargetLabel}</span> · nothing is saved until you confirm
+                </p>
               </div>
               <button
                 onClick={() => setRefineModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Close AI section chat"
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Editing</p>
-              <p className="mt-1 text-sm font-semibold text-slate-800">{refineTargetLabel}</p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Working draft</p>
+            {/* Body */}
+            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
+              {/* Left: draft + diff */}
+              <div className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <div className="flex items-center gap-1 rounded-lg bg-slate-200/70 p-0.5">
+                    <button
+                      onClick={() => setRefinePanel('draft')}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                        refinePanel === 'draft' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Working draft
+                    </button>
+                    <button
+                      onClick={() => setRefinePanel('diff')}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                        refinePanel === 'diff' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <GitCompare className="h-3.5 w-3.5" />
+                      Diff vs saved
+                      {refineChangeCount > 0 && (
+                        <span className="rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white">
+                          {refineChangeCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
                   <button
                     onClick={() => {
                       setRefineDraftContent(refineOriginalContent);
                       setRefineMessages([]);
                       setRefineExplanation('');
                     }}
-                    className="flex items-center gap-1 text-[10px] font-medium text-slate-500 hover:text-slate-800"
+                    className="flex items-center gap-1 text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-900"
                   >
-                    <RotateCcw className="h-3 w-3" /> Reset
+                    <RotateCcw className="h-3.5 w-3.5" /> Reset draft
                   </button>
                 </div>
-                <ul className="mt-2 space-y-2 text-xs text-slate-700">
-                  {contentItems(refineDraftContent).length === 0 ? (
-                    <li className="text-slate-400">No entries yet.</li>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {refinePanel === 'draft' ? (
+                    <ul className="space-y-2 text-sm text-slate-700">
+                      {contentItems(refineDraftContent).length === 0 ? (
+                        <li className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
+                          No entries yet. Ask the AI to draft some.
+                        </li>
+                      ) : (
+                        contentItems(refineDraftContent).map((item, idx) => (
+                          <li
+                            key={`${item}-${idx}`}
+                            className="flex gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 leading-relaxed"
+                          >
+                            <span className="mt-0.5 text-[11px] font-semibold text-slate-400">{idx + 1}</span>
+                            <span>{item}</span>
+                          </li>
+                        ))
+                      )}
+                    </ul>
                   ) : (
-                    contentItems(refineDraftContent).map((item, idx) => (
-                      <li key={`${item}-${idx}`} className="rounded-lg bg-white px-2 py-1.5 border border-slate-200">
-                        {item}
-                      </li>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                        <span className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">+{refineDiff.added} added</span>
+                        <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">−{refineDiff.removed} removed</span>
+                        <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-700">{refineDiff.changed} reworded</span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">{refineDiff.unchanged} unchanged</span>
+                      </div>
+
+                      {refineChangeCount === 0 ? (
+                        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
+                          The draft still matches your saved content.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2 text-sm leading-relaxed">
+                          {refineDiff.entries.map((entry, idx) => {
+                            if (entry.kind === 'unchanged') {
+                              return (
+                                <li
+                                  key={`unchanged-${idx}`}
+                                  className="flex gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-500"
+                                >
+                                  <span className="font-mono text-xs text-slate-300">=</span>
+                                  <span>{entry.value}</span>
+                                </li>
+                              );
+                            }
+
+                            if (entry.kind === 'added') {
+                              return (
+                                <li
+                                  key={`added-${idx}`}
+                                  className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900"
+                                >
+                                  <span className="font-mono text-xs font-bold text-emerald-600">+</span>
+                                  <span>{entry.value}</span>
+                                </li>
+                              );
+                            }
+
+                            if (entry.kind === 'removed') {
+                              return (
+                                <li
+                                  key={`removed-${idx}`}
+                                  className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900"
+                                >
+                                  <span className="font-mono text-xs font-bold text-rose-600">−</span>
+                                  <span className="line-through decoration-rose-400">{entry.value}</span>
+                                </li>
+                              );
+                            }
+
+                            return (
+                              <li
+                                key={`changed-${idx}`}
+                                className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2"
+                              >
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                                  Reworded
+                                </p>
+                                <p className="text-amber-950">
+                                  {entry.words?.map((part, partIdx) => (
+                                    <span
+                                      key={`${part.kind}-${partIdx}`}
+                                      className={
+                                        part.kind === 'added'
+                                          ? 'rounded-xs bg-emerald-200/80 text-emerald-900'
+                                          : part.kind === 'removed'
+                                            ? 'rounded-xs bg-rose-200/70 text-rose-900 line-through decoration-rose-400'
+                                            : ''
+                                      }
+                                    >
+                                      {part.value}
+                                    </span>
+                                  ))}
+                                </p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: conversation */}
+              <div className="flex min-h-0 flex-col">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">
+                  {refineMessages.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500">
+                      <p className="font-semibold text-slate-700">Start a conversation</p>
+                      <p className="mt-1 leading-relaxed">
+                        Ask the AI to add, remove, reorder, or rewrite entries. Every reply updates the working draft, and
+                        the <strong>Diff vs saved</strong> tab shows exactly what will change.
+                      </p>
+                    </div>
+                  ) : (
+                    refineMessages.map((message, index) => (
+                      <div
+                        key={`${message.role}-${index}`}
+                        className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                          message.role === 'user'
+                            ? 'ml-auto bg-slate-900 text-white'
+                            : 'mr-auto border border-slate-200 bg-white text-slate-700'
+                        }`}
+                      >
+                        {message.content}
+                      </div>
                     ))
                   )}
-                </ul>
-              </div>
 
-              <div>
-                <div className="mb-3 max-h-40 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-2">
-                  {refineMessages.length === 0 ? (
-                    <p className="p-2 text-[11px] text-slate-400">Ask AI to add, remove, reorder, or rewrite this section.</p>
-                  ) : refineMessages.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}`}
-                      className={`rounded-lg px-2.5 py-2 text-[11px] ${
-                        message.role === 'user'
-                          ? 'ml-6 bg-slate-900 text-white'
-                          : 'mr-6 border border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      {message.content}
+                  {refineExplanation && (
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-800">
+                      <span className="font-semibold">Why: </span>
+                      {refineExplanation}
                     </div>
-                  ))}
-                </div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Continue the conversation
-                </label>
-                <textarea
-                  rows={4}
-                  value={refinePrompt}
-                  onChange={(e) => setRefinePrompt(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-violet-500"
-                  placeholder="Remove the second bullet, add this fact, or revise the current draft..."
-                />
+                  )}
 
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[
-                    'Remove weak bullets',
-                    'Make it concise',
-                    'Add this new fact:',
-                    'Reorder by impact',
-                  ].map((chip) => (
+                  {refineError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
+                      {refineError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 border-t border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Remove weak bullets', 'Make it concise', 'Add this new fact:', 'Reorder by impact'].map((chip) => (
+                      <button
+                        key={chip}
+                        onClick={() => setRefinePrompt(chip)}
+                        className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-700 transition-colors hover:bg-slate-200"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={refinePrompt}
+                    onChange={(e) => setRefinePrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        handleRunAiRefine();
+                      }
+                    }}
+                    className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-violet-500"
+                    placeholder="Remove the second bullet, add this fact, or revise the current draft..."
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">Ctrl/⌘ + Enter to send</span>
                     <button
-                      key={chip}
-                      onClick={() => setRefinePrompt(chip)}
-                      className="px-2 py-0.5 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors"
+                      onClick={handleRunAiRefine}
+                      disabled={refining || !refinePrompt.trim()}
+                      className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-xs font-medium text-white shadow-xs transition-all hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {chip}
+                      {refining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      Send message
                     </button>
-                  ))}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end">
+            {/* Footer */}
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              {refineConfirmOpen ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-emerald-900">
+                    Replace the saved content for <strong>{refineTargetLabel}</strong> with this draft?
+                    {refineChangeCount > 0 && (
+                      <span className="ml-1 text-emerald-700">
+                        ({refineDiff.added} added, {refineDiff.removed} removed, {refineDiff.changed} reworded)
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setRefineConfirmOpen(false)}
+                      className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    >
+                      Keep editing
+                    </button>
+                    <button
+                      onClick={handleApplyRefine}
+                      disabled={savingRefine}
+                      className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {savingRefine && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Confirm and save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-slate-500">
+                    {refineChangeCount > 0
+                      ? `${refineChangeCount} pending change${refineChangeCount === 1 ? '' : 's'} not yet saved.`
+                      : 'No pending changes.'}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setRefineModalOpen(false)}
+                      className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    >
+                      Discard
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRefinePanel('diff');
+                        setRefineConfirmOpen(true);
+                      }}
+                      disabled={refineChangeCount === 0}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Review & apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset All Data Modal */}
+      {resetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-rose-50 p-2">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Reset profile and delete all data</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  This permanently deletes your contact details, summary, work experience, education, skills, projects,
+                  and certifications. It cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="flex items-start gap-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={resetApplications}
+                  onChange={(e) => setResetApplications(e.target.checked)}
+                  className="mt-0.5 accent-rose-600"
+                />
+                <span>
+                  Also delete job applications and generated resumes
+                  <span className="block text-[11px] text-slate-500">Removes tracked jobs, tailored documents, and compiled PDFs.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={resetAiSettings}
+                  onChange={(e) => setResetAiSettings(e.target.checked)}
+                  className="mt-0.5 accent-rose-600"
+                />
+                <span>
+                  Also reset AI settings
+                  <span className="block text-[11px] text-slate-500">Restores the default Ollama endpoint, model, and custom instructions.</span>
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Type <span className="font-mono font-bold text-rose-600">DELETE</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-rose-500"
+                placeholder="DELETE"
+                autoComplete="off"
+              />
+            </div>
+
+            {resetError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
+                {resetError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
               <button
-                onClick={handleRunAiRefine}
-                disabled={refining || !refinePrompt.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-medium text-xs rounded-xl shadow-xs transition-all"
+                onClick={() => setResetOpen(false)}
+                className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100"
               >
-                {refining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Send message
+                Cancel
+              </button>
+              <button
+                onClick={handleResetAllData}
+                disabled={resetting || resetConfirmText.trim().toUpperCase() !== 'DELETE'}
+                className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Delete everything
               </button>
             </div>
-
-            {refineError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-                {refineError}
-              </div>
-            )}
-
-            {refineMessages.length > 0 && (
-              <div className="rounded-xl bg-violet-50/80 border border-violet-200 p-4 space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-violet-900">Unsaved draft updated</p>
-                  {refineExplanation && <p className="mt-1 text-[11px] text-violet-700">{refineExplanation}</p>}
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    onClick={() => setRefineModalOpen(false)}
-                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded-lg"
-                  >
-                    Discard
-                  </button>
-                  <button
-                    onClick={() => setRefineConfirmOpen(true)}
-                    className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium shadow-xs"
-                  >
-                    Review & apply
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {refineConfirmOpen && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-sm font-semibold text-emerald-900">Confirm section replacement</p>
-                <p className="mt-1 text-xs text-emerald-800">
-                  Replace the saved content for <strong>{refineTargetLabel}</strong> with this working draft?
-                </p>
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    onClick={() => setRefineConfirmOpen(false)}
-                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-white"
-                  >
-                    Keep editing
-                  </button>
-                  <button
-                    onClick={handleApplyRefine}
-                    disabled={savingRefine}
-                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                  >
-                    {savingRefine && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm and save
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -1,5 +1,7 @@
+import io
 import json
 import re
+import zipfile
 from typing import Any, List, Literal, Optional
 from ninja import NinjaAPI, File, Schema
 from ninja.files import UploadedFile
@@ -19,12 +21,14 @@ from .models import (
     UserAISettings,
     JobApplication,
     TailoredDocument,
+    ItemEmbedding,
 )
 from .services.ollama_service import OllamaService
 from .services.resume_parser import ResumeParser
 from .services.tailor_service import TailorService
 from .services.section_editor import SectionEditor
 from .services.latex_compiler import LatexCompiler
+from .services.latex_templates import RESUMEFORGE_CLASS
 
 api = NinjaAPI(
     title="ResumeForge API",
@@ -158,6 +162,20 @@ class RefineSectionSchema(Schema):
 class UpdateDocumentSchema(Schema):
     latex_source: str
 
+class ReviewSectionsSchema(Schema):
+    latex_source: Optional[str] = None
+    model_name: Optional[str] = None
+
+class ResetDataSchema(Schema):
+    confirm: str
+    delete_applications: bool = True
+    delete_ai_settings: bool = False
+
+class ExportCustomZipSchema(Schema):
+    latex_source: str
+    company_name: Optional[str] = "Candidate"
+    doc_type: Optional[str] = "resume"
+
 
 # -------------------------------------------------------------
 # Auth Endpoints
@@ -271,6 +289,7 @@ def get_all_master_context(request: HttpRequest):
             "linkedin_url": profile.linkedin_url,
             "github_url": profile.github_url,
             "summary": profile.summary,
+            "raw_resume_text": profile.raw_resume_text,
         },
         "experiences": list(user.experiences.values()),
         "educations": list(user.educations.values()),
@@ -278,6 +297,55 @@ def get_all_master_context(request: HttpRequest):
         "projects": list(user.projects.values()),
         "certifications": list(user.certifications.values()),
     }
+
+@api.post("/master/reset")
+def reset_master_data(request: HttpRequest, data: ResetDataSchema):
+    """Delete the user's career data so they can start from a clean slate."""
+    if data.confirm.strip().upper() != "DELETE":
+        return api.create_response(
+            request,
+            {"error": 'Type "DELETE" to confirm this irreversible reset.'},
+            status=400,
+        )
+
+    user = get_current_user(request)
+    deleted = {}
+    with transaction.atomic():
+        deleted["experiences"] = user.experiences.all().delete()[0]
+        deleted["educations"] = user.educations.all().delete()[0]
+        deleted["skills"] = user.skills.all().delete()[0]
+        deleted["projects"] = user.projects.all().delete()[0]
+        deleted["certifications"] = user.certifications.all().delete()[0]
+        deleted["embeddings"] = ItemEmbedding.objects.filter(user=user).delete()[0]
+
+        if data.delete_applications:
+            documents = TailoredDocument.objects.filter(application__user=user)
+            for document in documents:
+                if document.pdf_file:
+                    document.pdf_file.delete(save=False)
+            deleted["documents"] = documents.delete()[0]
+            deleted["applications"] = user.applications.all().delete()[0]
+
+        if data.delete_ai_settings:
+            deleted["ai_settings"] = UserAISettings.objects.filter(user=user).delete()[0]
+
+        profile, _ = Profile.objects.get_or_create(user=user)
+        for field in (
+            "full_name",
+            "headline",
+            "email",
+            "phone",
+            "location",
+            "website_url",
+            "linkedin_url",
+            "github_url",
+            "summary",
+            "raw_resume_text",
+        ):
+            setattr(profile, field, "")
+        profile.save()
+
+    return {"status": "success", "deleted": deleted}
 
 @api.put("/master/profile")
 def update_profile(request: HttpRequest, data: ProfileSchema):
@@ -433,13 +501,15 @@ def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
     return {
         "status": "success",
         "message": "Resume parsed and imported into master profile",
+        "markdown_text": raw_text,
         "parsed_summary": {
             "name": parsed_data.get("profile", {}).get("full_name"),
             "profile": parsed_data.get("profile", {}),
             "experiences_count": len(parsed_data.get("experiences", [])),
             "educations_count": len(parsed_data.get("educations", [])),
             "skills_count": len(parsed_data.get("skills", [])),
-            "projects_count": len(parsed_data.get("projects", []))
+            "projects_count": len(parsed_data.get("projects", [])),
+            "certifications_count": len(parsed_data.get("certifications", [])),
         }
     }
 
@@ -567,3 +637,79 @@ def export_pdf(request: HttpRequest, doc_id: int):
     response = HttpResponse(pdf, content_type="application/pdf")
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+@api.get("/latex/resumeforge.cls")
+def download_class_file(request: HttpRequest):
+    response = HttpResponse(RESUMEFORGE_CLASS, content_type="text/x-tex; charset=utf-8")
+    response['Content-Disposition'] = 'attachment; filename="resumeforge.cls"'
+    return response
+
+@api.get("/latex/cls-content")
+def get_class_file_content(request: HttpRequest):
+    return {"content": RESUMEFORGE_CLASS}
+
+@api.get("/documents/{int:doc_id}/export-zip")
+def export_overleaf_zip(request: HttpRequest, doc_id: int):
+    user = get_current_user(request)
+    doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("main.tex", doc.latex_source)
+        zf.writestr("resumeforge.cls", RESUMEFORGE_CLASS)
+    zip_buffer.seek(0)
+    zip_filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}_overleaf.zip")
+    response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+    response['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
+    return response
+
+@api.post("/documents/export-zip-custom")
+def export_custom_overleaf_zip(request: HttpRequest, data: ExportCustomZipSchema):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("main.tex", data.latex_source)
+        zf.writestr("resumeforge.cls", RESUMEFORGE_CLASS)
+    zip_buffer.seek(0)
+    prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{data.company_name}_{data.doc_type}")
+    zip_filename = f"{prefix}_overleaf.zip"
+    response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+    response['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
+    return response
+
+@api.post("/documents/{int:doc_id}/review-sections")
+def review_document_sections(request: HttpRequest, doc_id: int, data: Optional[ReviewSectionsSchema] = None):
+    user = get_current_user(request)
+    doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
+    ai_settings = getattr(user, 'ai_settings', None)
+    endpoint = ai_settings.ollama_endpoint if ai_settings else None
+    model = (data.model_name if data and data.model_name else None) or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
+
+    source_to_review = (data.latex_source if data and data.latex_source else None) or doc.latex_source
+
+    reviewed_latex = TailorService.review_latex_document(
+        latex_source=source_to_review,
+        model_name=model,
+        base_url=endpoint,
+    )
+
+    doc.latex_source = reviewed_latex
+    doc.save(update_fields=["latex_source", "updated_at"])
+
+    return {"status": "success", "latex_source": reviewed_latex}
+
+@api.post("/documents/review-latex")
+def review_custom_latex(request: HttpRequest, data: ReviewSectionsSchema):
+    user = get_current_user(request)
+    ai_settings = getattr(user, 'ai_settings', None)
+    endpoint = ai_settings.ollama_endpoint if ai_settings else None
+    model = data.model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
+
+    if not data.latex_source:
+        return api.create_response(request, {"error": "latex_source is required."}, status=400)
+
+    reviewed_latex = TailorService.review_latex_document(
+        latex_source=data.latex_source,
+        model_name=model,
+        base_url=endpoint,
+    )
+    return {"status": "success", "latex_source": reviewed_latex}
+

@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from urllib.parse import quote, urlsplit, urlunsplit
 
 
@@ -180,9 +180,7 @@ RESUME_LATEX_TEMPLATE = r"""%-------------------------
 
 %----------HEADING----------
 \begin{center}
-    \textbf{\Huge \scshape <<FULL_NAME>>} \\ \vspace{2pt}
-    \small <<HEADLINE>> \\ \vspace{2pt}
-    \small <<CONTACT_INFO>>
+<<HEADING_BLOCK>>
 \end{center}
 
 <<SUMMARY_SECTION>>
@@ -199,6 +197,9 @@ RESUME_LATEX_TEMPLATE = r"""%-------------------------
 %-----------TECHNICAL SKILLS-----------
 <<SKILLS_SECTION>>
 
+%-----------CERTIFICATIONS-----------
+<<CERTIFICATIONS_SECTION>>
+
 \end{document}
 """
 
@@ -207,8 +208,7 @@ COVER_LETTER_LATEX_TEMPLATE = r"""\documentclass{resumeforge}
 \begin{document}
 
 \begin{center}
-    \textbf{\Huge \scshape <<FULL_NAME>>} \\ \vspace{2pt}
-    \small <<CONTACT_INFO>>
+<<HEADING_BLOCK>>
 \end{center}
 
 \vspace{12pt}
@@ -242,15 +242,21 @@ class LatexGenerator:
     def generate_resume(
         cls,
         profile: Dict[str, Any],
-        experiences: List[Dict[str, Any]],
-        educations: List[Dict[str, Any]],
-        skills: List[Dict[str, Any]],
-        projects: List[Dict[str, Any]],
+        experiences: Optional[List[Dict[str, Any]]] = None,
+        educations: Optional[List[Dict[str, Any]]] = None,
+        skills: Optional[List[Dict[str, Any]]] = None,
+        projects: Optional[List[Dict[str, Any]]] = None,
+        certifications: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Render complete LaTeX source string for a resume."""
+        experiences = experiences or []
+        educations = educations or []
+        skills = skills or []
+        projects = projects or []
+        certifications = certifications or []
         full_name = escape_latex(profile.get("full_name") or "Your Name")
         headline = escape_latex(profile.get("headline") or "")
-        
+
         # Build contact info line
         contacts = []
         if profile.get("phone"):
@@ -267,6 +273,14 @@ class LatexGenerator:
         if profile.get("website_url"):
             contacts.append(safe_latex_hyperlink(profile['website_url'], 'Portfolio'))
         contact_line = r" \enspace\textbar\enspace ".join(contacts)
+
+        # Build heading block safely without generating empty \\ lines
+        heading_lines = [rf"    \textbf{{\Huge \scshape {full_name}}}"]
+        if headline:
+            heading_lines.append(rf"    \small {headline}")
+        if contact_line:
+            heading_lines.append(rf"    \small {contact_line}")
+        heading_block = (r" \\ \vspace{2pt}" + "\n").join(heading_lines)
 
         # Summary section
         summary_section = ""
@@ -307,9 +321,18 @@ class LatexGenerator:
             proj_lines = [r"\section{Projects}", r"\resumeSubHeadingListStart"]
             for proj in projects:
                 title = escape_latex(proj.get("title", ""))
+                subtitle = escape_latex(proj.get("subtitle", ""))
+                role = escape_latex(proj.get("role", ""))
                 repo_url = proj.get("repo_url")
                 live_url = proj.get("live_url")
-                title_markup = f"\\textbf{{{title}}}"
+
+                title_parts = [f"\\textbf{{{title}}}"]
+                if subtitle:
+                    title_parts.append(f"\\emph{{{subtitle}}}")
+                if role:
+                    title_parts.append(role)
+                title_markup = r" \enspace\textbar\enspace ".join(title_parts)
+
                 techs = ", ".join(escape_latex(t) for t in proj.get("technologies", []) if str(t).strip())
                 tech_str = rf" \enspace\textbar\enspace \emph{{{techs}}}" if techs else ""
                 links = []
@@ -341,41 +364,73 @@ class LatexGenerator:
                 degree = escape_latex(edu.get("degree", ""))
                 field = escape_latex(edu.get("field_of_study", ""))
                 sub = f"{degree} in {field}" if field else degree
+                gpa = str(edu.get("gpa") or "").strip()
+                if gpa:
+                    sub += f" \\enspace\\textbar\\enspace GPA: {escape_latex(gpa)}"
                 date_str = cls._date_range(edu.get("start_date"), edu.get("end_date"))
                 edu_lines.append(f"\\resumeSubheading{{{inst}}}{{{date_str}}}{{{sub}}}{{}}")
+                highlights = edu.get("highlights", [])
+                if highlights:
+                    edu_lines.append(r"\resumeItemListStart")
+                    for h in highlights:
+                        highlight_text = str(h or "").strip()
+                        if highlight_text:
+                            edu_lines.append(f"  \\resumeItem{{{escape_latex(highlight_text)}}}")
+                    edu_lines.append(r"\resumeItemListEnd")
             edu_lines.append(r"\resumeSubHeadingListEnd")
             edu_section = "\n".join(edu_lines)
 
         # Skills section
         skills_section = ""
         if skills:
-            # Group skills by category
             categories: Dict[str, List[str]] = {}
             for sk in skills:
                 cat = str(sk.get("category") or "Technical Skills").strip()
                 name = str(sk.get("name") or "").strip()
                 if name:
-                    categories.setdefault(cat, []).append(escape_latex(name))
+                    for sub_name in [n.strip() for n in name.split(",") if n.strip()]:
+                        categories.setdefault(cat, []).append(escape_latex(sub_name))
 
-            skill_lines = [r"\section{Technical Skills}", r"\begin{itemize}[leftmargin=0.15in, label={}]", r"\item\small{"]
+            skill_lines = [
+                r"\section{Technical Skills}",
+                r"\begin{itemize}[leftmargin=0.15in, label={}]",
+                r"\small{\item{",
+            ]
             cat_strings = []
             for cat, items in categories.items():
-                cat_strings.append(f"\\textbf{{{escape_latex(cat)}}}: " + ", ".join(items))
+                unique_items = list(dict.fromkeys(items))
+                cat_strings.append(f"\\textbf{{{escape_latex(cat)}}}{{: " + ", ".join(unique_items) + "}")
             skill_lines.append(" \\\\ \n".join(cat_strings))
-            skill_lines.append(r"}")
+            skill_lines.append(r"}}")
             skill_lines.append(r"\end{itemize}")
             skills_section = "\n".join(skill_lines)
 
+        # Certifications section
+        cert_section = ""
+        if certifications:
+            cert_lines = [r"\section{Certifications}", r"\resumeSubHeadingListStart"]
+            for cert in certifications:
+                name = escape_latex(cert.get("name", ""))
+                if not name:
+                    continue
+                issuer = escape_latex(cert.get("issuer", ""))
+                issue_date = escape_latex(cert.get("issue_date", ""))
+                url = cert.get("credential_url")
+                name_markup = safe_latex_hyperlink(url, name) if url else f"\\textbf{{{name}}}"
+                heading = f"{name_markup} \\enspace\\textbar\\enspace \\emph{{{issuer}}}" if issuer else name_markup
+                cert_lines.append(f"\\resumeProjectHeading{{{heading}}}{{{issue_date}}}")
+            cert_lines.append(r"\resumeSubHeadingListEnd")
+            cert_section = "\n".join(cert_lines)
+
         result = (
             RESUME_LATEX_TEMPLATE
-            .replace("<<FULL_NAME>>", full_name)
-            .replace("<<HEADLINE>>", headline)
-            .replace("<<CONTACT_INFO>>", contact_line)
+            .replace("<<HEADING_BLOCK>>", heading_block)
             .replace("<<SUMMARY_SECTION>>", summary_section)
             .replace("<<EXPERIENCE_SECTION>>", exp_section)
             .replace("<<PROJECTS_SECTION>>", proj_section)
             .replace("<<EDUCATION_SECTION>>", edu_section)
             .replace("<<SKILLS_SECTION>>", skills_section)
+            .replace("<<CERTIFICATIONS_SECTION>>", cert_section)
         )
         if not validate_latex_document(result):
             raise ValueError("Generated resume LaTeX failed structural validation.")
@@ -402,18 +457,23 @@ class LatexGenerator:
             contacts.append(escape_latex(profile["location"]))
         contact_line = r" \enspace\textbar\enspace ".join(contacts)
 
+        heading_lines = [rf"    \textbf{{\Huge \scshape {full_name}}}"]
+        if contact_line:
+            heading_lines.append(rf"    \small {contact_line}")
+        heading_block = (r" \\ \vspace{2pt}" + "\n").join(heading_lines)
+
         # Format letter paragraphs
         paragraphs = [p.strip() for p in letter_body.split("\n\n") if p.strip()]
         formatted_body = "\n\n\\vspace{8pt}\n".join([escape_latex(p) for p in paragraphs])
 
         result = (
             COVER_LETTER_LATEX_TEMPLATE
-            .replace("<<FULL_NAME>>", full_name)
-            .replace("<<CONTACT_INFO>>", contact_line)
+            .replace("<<HEADING_BLOCK>>", heading_block)
             .replace("<<DATE>>", escape_latex(date_str))
             .replace("<<COMPANY_NAME>>", escape_latex(company_name))
             .replace("<<JOB_TITLE>>", escape_latex(job_title))
             .replace("<<LETTER_BODY>>", formatted_body)
+            .replace("<<FULL_NAME>>", full_name)
         )
         if not validate_latex_document(result):
             raise ValueError("Generated cover letter LaTeX failed structural validation.")

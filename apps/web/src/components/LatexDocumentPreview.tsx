@@ -1,14 +1,17 @@
 import React, { useRef, useState } from 'react';
 import { parseLatexDocument, ParsedDocument } from '../utils/latexParser';
 import html2pdf from 'html2pdf.js';
-import { Download, Printer, Copy, Check, Eye, Loader2 } from 'lucide-react';
+import { Download, Printer, Copy, Check, Eye, Loader2, FolderArchive, FileCode, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
+import { RESUMEFORGE_CLASS } from '../utils/latexClass';
 
 interface LatexDocumentPreviewProps {
   latexSource: string;
   docType: 'resume' | 'cover_letter';
   companyName: string;
   documentId?: number;
+  onReviewSections?: () => void;
+  reviewingSections?: boolean;
 }
 
 export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
@@ -16,9 +19,12 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
   docType,
   companyName,
   documentId,
+  onReviewSections,
+  reviewingSections = false,
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [copied, setCopied] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -58,6 +64,41 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
     }
   };
 
+  const handleDownloadCls = () => {
+    const blob = new Blob([RESUMEFORGE_CLASS], { type: 'text/x-tex;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'resumeforge.cls';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadOverleafZip = async () => {
+    setDownloadingZip(true);
+    setDownloadError(null);
+    try {
+      const filename = `${companyName || 'Candidate'}_${docType}_overleaf.zip`.replace(/\s+/g, '_');
+      let blob: Blob;
+      if (documentId) {
+        blob = await api.downloadDocumentZip(documentId);
+      } else {
+        blob = await api.downloadCustomOverleafZip(latexSource, companyName, docType);
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export Overleaf ZIP:', err);
+      setDownloadError(err instanceof Error ? err.message : 'Failed to export Overleaf zip.');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
   const handleNativePrint = () => {
     window.print();
   };
@@ -79,7 +120,7 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
           <span>Client-Side Live Preview ({docType === 'resume' ? 'ATS Resume' : 'Cover Letter'})</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleCopyText}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 transition-colors shadow-2xs"
@@ -96,6 +137,41 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
           >
             <Printer className="w-3.5 h-3.5" />
             Print / Vector PDF
+          </button>
+
+          <button
+            onClick={handleDownloadCls}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 transition-colors shadow-2xs"
+            title="Download resumeforge.cls (LaTeX document class for Overleaf & local compilation)"
+          >
+            <FileCode className="w-3.5 h-3.5 text-slate-500" />
+            .cls
+          </button>
+
+          {onReviewSections && (
+            <button
+              onClick={onReviewSections}
+              disabled={reviewingSections}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-200 transition-colors shadow-2xs disabled:opacity-50"
+              title="Review sections with AI to remove duplicate bullets and polish phrasing"
+            >
+              {reviewingSections ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              )}
+              {reviewingSections ? 'Reviewing...' : 'AI Review (Deduplicate)'}
+            </button>
+          )}
+
+          <button
+            onClick={handleDownloadOverleafZip}
+            disabled={downloadingZip}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-2xs disabled:opacity-50"
+            title="Download complete Overleaf project (.zip containing main.tex & resumeforge.cls)"
+          >
+            {downloadingZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
+            Overleaf (.zip)
           </button>
 
           <button

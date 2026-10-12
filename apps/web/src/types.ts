@@ -8,6 +8,24 @@ export interface Profile {
   linkedin_url: string;
   github_url: string;
   summary: string;
+  raw_resume_text?: string;
+}
+
+export interface ParsedResumeSummary {
+  name?: string;
+  profile?: Partial<Profile>;
+  experiences_count?: number;
+  educations_count?: number;
+  skills_count?: number;
+  projects_count?: number;
+  certifications_count?: number;
+}
+
+export interface ResumeUploadResult {
+  status: string;
+  message: string;
+  markdown_text?: string;
+  parsed_summary?: ParsedResumeSummary;
 }
 
 export interface Experience {

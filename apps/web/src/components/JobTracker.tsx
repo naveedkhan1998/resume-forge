@@ -19,8 +19,12 @@ import {
   Eye,
   X,
   AlertCircle,
+  Package,
+  FolderArchive,
+  Info,
 } from 'lucide-react';
 import { LatexDocumentPreview } from './LatexDocumentPreview';
+import { RESUMEFORGE_CLASS } from '../utils/latexClass';
 
 interface JobTrackerProps {
   activeModel: string;
@@ -32,7 +36,13 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const [loading, setLoading] = useState(false);
   const [tailoring, setTailoring] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedCls, setCopiedCls] = useState(false);
   const [savedDoc, setSavedDoc] = useState(false);
+  const [codeFileTab, setCodeFileTab] = useState<'tex' | 'cls'>('tex');
+  const [downloadingZip, setDownloadingZip] = useState(false);
+  const [showOverleafGuide, setShowOverleafGuide] = useState(false);
+  const [reviewingSections, setReviewingSections] = useState(false);
+  const [reviewedSuccess, setReviewedSuccess] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
 
   // New Job Modal
@@ -216,6 +226,74 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
     link.download = `${selectedJob.company_name}_${activeDocType}.tex`.replace(/\s+/g, '_');
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleCopyCls = () => {
+    navigator.clipboard.writeText(RESUMEFORGE_CLASS);
+    setCopiedCls(true);
+    setTimeout(() => setCopiedCls(false), 2000);
+  };
+
+  const handleDownloadCls = () => {
+    const blob = new Blob([RESUMEFORGE_CLASS], { type: 'text/x-tex;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'resumeforge.cls';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadOverleafZip = async () => {
+    if (!selectedJob) return;
+    setDownloadingZip(true);
+    setOperationError(null);
+    try {
+      const filename = `${selectedJob.company_name}_${activeDocType}_overleaf.zip`.replace(/\s+/g, '_');
+      const doc = selectedJob.documents?.find((d) => d.doc_type === activeDocType);
+      let blob: Blob;
+      if (doc && editableLatex === doc.latex_source) {
+        blob = await api.downloadDocumentZip(doc.id);
+      } else {
+        blob = await api.downloadCustomOverleafZip(editableLatex, selectedJob.company_name, activeDocType);
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setOperationError(err instanceof Error ? err.message : 'Failed to export Overleaf ZIP package.');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
+  const handleReviewSections = async () => {
+    if (!selectedJob) return;
+    const doc = selectedJob.documents?.find((d) => d.doc_type === activeDocType);
+    setReviewingSections(true);
+    setOperationError(null);
+    try {
+      let res: { status: string; latex_source: string };
+      if (doc) {
+        res = await api.reviewDocumentSections(doc.id, editableLatex);
+      } else {
+        res = await api.reviewCustomLatex(editableLatex);
+      }
+      setEditableLatex(res.latex_source);
+      setReviewedSuccess(true);
+      setTimeout(() => setReviewedSuccess(false), 3000);
+      const detail = await api.getJobDetail(selectedJob.id);
+      setSelectedJob(detail);
+    } catch (err) {
+      console.error(err);
+      setOperationError(err instanceof Error ? err.message : 'Section review failed.');
+    } finally {
+      setReviewingSections(false);
+    }
   };
 
   const activeDoc = selectedJob?.documents?.find((d) => d.doc_type === activeDocType);
@@ -457,28 +535,47 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       </button>
                     </div>
 
-                    {/* View Mode Toggle: Visual Preview vs LaTeX Code */}
-                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/80">
+                    <div className="flex items-center gap-2">
+                      {/* AI Review Action Button */}
                       <button
-                        onClick={() => setViewMode('preview')}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                          viewMode === 'preview'
-                            ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        onClick={handleReviewSections}
+                        disabled={reviewingSections || !editableLatex}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs transition-all disabled:opacity-50"
+                        title="Run AI review across sections using small model to eliminate duplicate bullets and polish phrasing"
                       >
-                        <Eye className="w-3.5 h-3.5" /> Live Preview & PDF
+                        {reviewingSections ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        ) : reviewedSuccess ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                        {reviewingSections ? 'Reviewing...' : reviewedSuccess ? 'Deduplicated!' : 'AI Review (Deduplicate)'}
                       </button>
-                      <button
-                        onClick={() => setViewMode('code')}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                          viewMode === 'code'
-                            ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        <FileCode className="w-3.5 h-3.5" /> LaTeX Source (.tex)
-                      </button>
+
+                      {/* View Mode Toggle: Visual Preview vs LaTeX Code */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/80">
+                        <button
+                          onClick={() => setViewMode('preview')}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                            viewMode === 'preview'
+                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Live Preview & PDF
+                        </button>
+                        <button
+                          onClick={() => setViewMode('code')}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                            viewMode === 'code'
+                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          <FileCode className="w-3.5 h-3.5" /> LaTeX Source (.tex)
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -489,48 +586,176 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       docType={activeDocType}
                       companyName={selectedJob.company_name}
                       documentId={editableLatex === activeDoc?.latex_source ? activeDoc?.id : undefined}
+                      onReviewSections={handleReviewSections}
+                      reviewingSections={reviewingSections}
                     />
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-500 font-medium">
-                          Directly edit the LaTeX source code. Changes will reflect in live preview upon saving.
-                        </span>
-                        <div className="flex items-center gap-2">
+                      {/* Sub-toolbar: File tabs & Export actions */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-100/80 p-2 rounded-xl border border-slate-200">
+                        {/* File Switcher Tabs */}
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={handleCopyLatex}
-                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                            title="Copy to Clipboard"
+                            onClick={() => setCodeFileTab('tex')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                              codeFileTab === 'tex'
+                                ? 'bg-white text-indigo-700 shadow-2xs border border-slate-200/80'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                            }`}
                           >
-                            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                            {copied ? 'Copied' : 'Copy'}
+                            <FileCode className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{selectedJob.company_name ? `${selectedJob.company_name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${activeDocType}.tex` : 'main.tex'}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">Editable</span>
                           </button>
+
                           <button
-                            onClick={handleDownloadTex}
-                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                            title="Download .tex"
+                            onClick={() => setCodeFileTab('cls')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                              codeFileTab === 'cls'
+                                ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                            }`}
                           >
-                            <Download className="w-3.5 h-3.5" /> .tex
+                            <Package className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>resumeforge.cls</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">Class File</span>
                           </button>
+                        </div>
+
+                        {/* Export & Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {codeFileTab === 'tex' ? (
+                            <>
+                              <button
+                                onClick={handleReviewSections}
+                                disabled={reviewingSections || !editableLatex}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
+                                title="Run section-by-section AI review to eliminate duplicate bullets"
+                              >
+                                {reviewingSections ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                ) : reviewedSuccess ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : (
+                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                )}
+                                {reviewingSections ? 'Reviewing...' : reviewedSuccess ? 'Deduplicated!' : 'AI Review (Deduplicate)'}
+                              </button>
+
+                              <button
+                                onClick={handleCopyLatex}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                                title="Copy LaTeX source"
+                              >
+                                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                {copied ? 'Copied' : 'Copy'}
+                              </button>
+                              <button
+                                onClick={handleDownloadTex}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                                title="Download .tex document"
+                              >
+                                <Download className="w-3.5 h-3.5" /> .tex
+                              </button>
+                              <button
+                                onClick={handleSaveLatex}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors"
+                              >
+                                {savedDoc ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
+                                {savedDoc ? 'Saved' : 'Save'}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={handleCopyCls}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                                title="Copy resumeforge.cls content"
+                              >
+                                {copiedCls ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                {copiedCls ? 'Copied' : 'Copy .cls'}
+                              </button>
+                              <button
+                                onClick={handleDownloadCls}
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
+                                title="Download resumeforge.cls"
+                              >
+                                <Download className="w-3.5 h-3.5" /> .cls
+                              </button>
+                            </>
+                          )}
+
+                          {/* Overleaf Zip Bundle */}
                           <button
-                            onClick={handleSaveLatex}
-                            className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors"
+                            onClick={handleDownloadOverleafZip}
+                            disabled={downloadingZip}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-2xs transition-colors"
+                            title="Download complete ZIP for Overleaf containing main.tex & resumeforge.cls"
                           >
-                            {savedDoc ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
-                            {savedDoc ? 'Saved' : 'Save'}
+                            {downloadingZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
+                            Overleaf (.zip)
+                          </button>
+
+                          <button
+                            onClick={() => setShowOverleafGuide(!showOverleafGuide)}
+                            className={`p-1.5 rounded-lg border transition-colors ${
+                              showOverleafGuide ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Overleaf import instructions"
+                          >
+                            <Info className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
 
-                      <div className="relative">
-                        <textarea
-                          rows={24}
-                          value={editableLatex}
-                          onChange={(e) => setEditableLatex(e.target.value)}
-                          className="w-full font-mono text-xs p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 leading-relaxed focus:outline-indigo-500 shadow-inner"
-                          placeholder="% LaTeX source code..."
-                        />
-                      </div>
+                      {/* Overleaf Quick Guide Banner */}
+                      {showOverleafGuide && (
+                        <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200 text-xs text-indigo-900 space-y-2">
+                          <div className="flex items-center justify-between font-bold text-indigo-950">
+                            <span className="flex items-center gap-1.5">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              How to open and edit this resume in Overleaf
+                            </span>
+                            <button
+                              onClick={() => setShowOverleafGuide(false)}
+                              className="text-indigo-400 hover:text-indigo-700"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-slate-700 leading-relaxed">
+                            Because this resume uses the custom <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">\documentclass&#123;resumeforge&#125;</code> class, Overleaf needs both your <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">main.tex</code> and <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">resumeforge.cls</code>.
+                          </p>
+                          <ol className="list-decimal list-inside space-y-1 text-slate-700 pt-1 font-medium">
+                            <li>Click <strong>Overleaf (.zip)</strong> above to download the ready-to-use project archive.</li>
+                            <li>Go to <a href="https://www.overleaf.com/project" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold hover:text-indigo-800">overleaf.com/project</a> and click <strong>New Project</strong> &rarr; <strong>Upload Project</strong>.</li>
+                            <li>Drag and drop the downloaded <code className="px-1 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">.zip</code> file. Overleaf will open and compile it immediately!</li>
+                          </ol>
+                        </div>
+                      )}
+
+                      {/* File Content Area */}
+                      {codeFileTab === 'tex' ? (
+                        <div className="relative">
+                          <textarea
+                            rows={24}
+                            value={editableLatex}
+                            onChange={(e) => setEditableLatex(e.target.value)}
+                            className="w-full font-mono text-xs p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 leading-relaxed focus:outline-indigo-500 shadow-inner"
+                            placeholder="% LaTeX source code..."
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                            <span>Document class file defining formatting, layout geometry, and macros.</span>
+                            <span className="font-mono text-[11px] text-slate-400">resumeforge.cls &bull; LaTeX2e</span>
+                          </div>
+                          <pre className="max-h-[550px] overflow-y-auto p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-800 font-mono text-xs leading-relaxed select-text shadow-inner">
+                            {RESUMEFORGE_CLASS}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

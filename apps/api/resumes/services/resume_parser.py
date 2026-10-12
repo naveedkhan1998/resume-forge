@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import re
 from typing import Dict, Any, Optional
 import pypdf
 import pdfplumber
@@ -16,6 +17,7 @@ from ..models import (
     Certification,
 )
 from .ollama_service import OllamaService
+from .pdf_markdown import DocumentMarkdownConverter
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +28,19 @@ Rules:
 - Return only valid JSON in the exact schema below.
 - Preserve factual data and do not invent missing details.
 - Parse every visible section: profile, experiences, education, skills, projects, certifications.
-- Separate every visible experience or project bullet into its own list item.
-- Preserve wording and facts. Extract existing numbers and scope, but do not rewrite, embellish,
-  infer metrics, or merge facts from different roles.
-- For skills, split into relevant categories such as Languages, Frameworks, Cloud & DevOps, Databases, Tools, Leadership, or Design.
+- Separate every visible experience or project bullet into its own list item. Keep all metrics, achievements, and facts.
+- Preserve wording and facts. Extract existing numbers and scope, but do not rewrite, embellish, infer metrics, or merge facts from different roles.
+- For skills: Every individual skill must be its own object in the skills array (e.g. name: "Python", name: "Scala"). Never lump multiple skills together into one comma-separated name.
+- Split skills into relevant categories such as Languages, Frameworks, Cloud & DevOps, Databases, Tools, Observability, or Leadership.
 - Distinguish employment, projects, education, certifications, and skills using headings and nearby dates.
 - Associate each bullet only with its nearest role, project, or education entry.
 - Treat "Present", "Current", or an open-ended latest role as is_current=true.
-- Treat freelance, self-employed, consulting, and independent-contract work as ONE experience entry,
-  not as separate jobs or standalone portfolio projects.
-- Put every freelance client engagement in that experience's client_projects list. Preserve the client
-  and project names when stated, and keep each engagement's bullets and technologies separate.
-- Use the top-level projects section only for personal, open-source, academic, or portfolio projects
-  that were not performed for a freelance client.
+- Treat freelance, self-employed, consulting, and independent-contract work as ONE experience entry, not as separate jobs or standalone portfolio projects.
+- Put every freelance client engagement in that experience's client_projects list. Preserve the client and project names when stated, and keep each engagement's bullets and technologies separate.
+- Use the top-level projects section only for personal, open-source, academic, or portfolio projects that were not performed for a freelance client.
 - Never duplicate a freelance client engagement in both experiences and projects.
 - If a field is missing, set it to an empty string or empty array, not a placeholder like "N/A".
+- Keep names, titles, organizations, locations, dates, and contact fields concise. Do not put summaries, bullets, or multiple fields into them.
 - Deduplicate repeated entries; keep the most complete version.
 - Keep the order of experiences, projects, and educations in chronological order when possible.
 
@@ -120,44 +120,18 @@ Exact schema:
 """
 
 class ResumeParser:
+    SECTION_MODELS = {
+        "experiences": Experience,
+        "educations": Education,
+        "skills": Skill,
+        "projects": Project,
+        "certifications": Certification,
+    }
+
     @staticmethod
     def extract_text(file_obj, filename: str) -> str:
-        """Extract raw plain text from PDF, DOCX, or TXT."""
-        ext = filename.lower().split('.')[-1]
-        content_bytes = file_obj.read() if hasattr(file_obj, 'read') else file_obj
-        if isinstance(content_bytes, str):
-            return content_bytes
-
-        if ext == 'pdf':
-            text = ""
-            try:
-                with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:
-                    for page in pdf.pages:
-                        extracted = page.extract_text()
-                        if extracted:
-                            text += extracted + "\n"
-            except Exception as e:
-                logger.warning(f"pdfplumber failed, falling back to pypdf: {e}")
-                reader = pypdf.PdfReader(io.BytesIO(content_bytes))
-                for page in reader.pages:
-                    text += (page.extract_text() or "") + "\n"
-            return text.strip()
-
-        elif ext in ('docx', 'doc'):
-            doc = docx.Document(io.BytesIO(content_bytes))
-            text_lines = [p.text for p in doc.paragraphs if p.text.strip()]
-            for table in doc.tables:
-                for row in table.rows:
-                    row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                    if row_text:
-                        text_lines.append(" | ".join(row_text))
-            return "\n".join(text_lines).strip()
-
-        else: # txt or other text format
-            try:
-                return content_bytes.decode('utf-8', errors='ignore').strip()
-            except Exception:
-                return str(content_bytes)
+        """Extract structured, layout-aware Markdown from PDF, DOCX, or TXT."""
+        return DocumentMarkdownConverter.convert_file(file_obj, filename)
 
     @staticmethod
     def _normalize_value(value: Any) -> Any:
@@ -187,6 +161,21 @@ class ResumeParser:
         if isinstance(value, dict):
             return {str(key): ResumeParser._normalize_value(val) for key, val in value.items()}
         return value
+
+    @staticmethod
+    def _normalize_model_string(model, field_name: str, value: Any) -> str:
+        text = str(value or "").strip()
+        max_length = model._meta.get_field(field_name).max_length
+        if max_length and len(text) > max_length:
+            logger.warning(
+                "Truncating parsed resume field %s.%s from %d to %d characters.",
+                model.__name__,
+                field_name,
+                len(text),
+                max_length,
+            )
+            return text[:max_length]
+        return text
 
     @classmethod
     def normalize_parsed_data(cls, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -233,7 +222,11 @@ class ResumeParser:
                     if isinstance(default, list) and not isinstance(record[field], list):
                         record[field] = []
                     elif isinstance(default, str):
-                        record[field] = str(record[field] or "").strip()
+                        record[field] = cls._normalize_model_string(
+                            cls.SECTION_MODELS[key],
+                            field,
+                            record[field],
+                        )
                 if key == "experiences":
                     current = record["is_current"]
                     record["is_current"] = (
@@ -263,6 +256,19 @@ class ResumeParser:
                             )
                     record["bullet_points"] = list(dict.fromkeys(record["bullet_points"]))
                     record["technologies"] = list(dict.fromkeys(record["technologies"]))
+                if key == "skills":
+                    name_raw = str(record.get("name", "")).strip()
+                    if "," in name_raw or ";" in name_raw:
+                        sub_names = [s.strip() for s in re.split(r"[,;]+", name_raw) if s.strip()]
+                        for sub_name in sub_names:
+                            sub_record = dict(record)
+                            sub_record["name"] = sub_name
+                            sub_identity = (str(sub_record["category"]).casefold(), sub_name.casefold())
+                            if sub_name and sub_identity not in seen:
+                                seen.add(sub_identity)
+                                normalized_items.append(sub_record)
+                        continue
+
                 identity_fields = {
                     "experiences": ("company", "role", "start_date"),
                     "educations": ("institution", "degree"),
@@ -276,10 +282,15 @@ class ResumeParser:
                     normalized_items.append(record)
             cleaned[key] = normalized_items
 
-        if "profile" in cleaned and isinstance(cleaned["profile"], dict):
-            for field in ["full_name", "headline", "email", "phone", "location", "website_url", "linkedin_url", "github_url", "summary"]:
-                if field not in cleaned["profile"]:
-                    cleaned["profile"][field] = ""
+        for field in [
+            "full_name", "headline", "email", "phone", "location",
+            "website_url", "linkedin_url", "github_url", "summary",
+        ]:
+            cleaned["profile"][field] = cls._normalize_model_string(
+                Profile,
+                field,
+                cleaned["profile"].get(field, ""),
+            )
 
         return cleaned
 
