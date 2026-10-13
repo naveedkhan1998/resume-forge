@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { parseLatexDocument, ParsedDocument } from '../utils/latexParser';
 import html2pdf from 'html2pdf.js';
-import { Download, Printer, Copy, Check, Eye, Loader2, FolderArchive, FileCode, Sparkles } from 'lucide-react';
+import { Download, Printer, Copy, Check, Eye, Loader2, FolderArchive, FileCode, Wand2 } from 'lucide-react';
 import { api } from '../services/api';
 import { RESUMEFORGE_CLASS } from '../utils/latexClass';
+import { Button } from './ui/button';
 
 interface LatexDocumentPreviewProps {
   latexSource: string;
@@ -49,7 +50,7 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
       const opt = {
         margin: [10, 10, 10, 10] as [number, number, number, number],
         filename,
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, letterRendering: true },
         jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' as const },
         enableLinks: true,
@@ -114,74 +115,79 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
   return (
     <div className="space-y-4">
       {/* Action Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-100/90 rounded-xl border border-slate-200">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-          <Eye className="w-4 h-4 text-indigo-600" />
-          <span>Client-Side Live Preview ({docType === 'resume' ? 'ATS Resume' : 'Cover Letter'})</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center gap-2 px-1 text-xs font-medium text-slate-600">
+          <Eye className="h-4 w-4 text-slate-400" />
+          <span>{docType === 'resume' ? 'Resume preview' : 'Cover letter preview'}</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={handleCopyText}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 transition-colors shadow-2xs"
             title="Copy plain text"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? 'Copied' : 'Copy Text'}
-          </button>
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? 'Copied' : 'Copy text'}
+          </Button>
 
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={handleNativePrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 transition-colors shadow-2xs"
             title="Print or Save via Browser Print Dialog"
           >
-            <Printer className="w-3.5 h-3.5" />
-            Print / Vector PDF
-          </button>
+            <Printer className="h-3.5 w-3.5" />
+            Print
+          </Button>
 
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={handleDownloadCls}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 rounded-lg border border-slate-200 transition-colors shadow-2xs"
             title="Download resumeforge.cls (LaTeX document class for Overleaf & local compilation)"
           >
-            <FileCode className="w-3.5 h-3.5 text-slate-500" />
+            <FileCode className="h-3.5 w-3.5" />
             .cls
-          </button>
+          </Button>
 
           {onReviewSections && (
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={onReviewSections}
               disabled={reviewingSections}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-200 transition-colors shadow-2xs disabled:opacity-50"
               title="Review sections with AI to remove duplicate bullets and polish phrasing"
             >
               {reviewingSections ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <Wand2 className="h-3.5 w-3.5" />
               )}
-              {reviewingSections ? 'Reviewing...' : 'AI Review (Deduplicate)'}
-            </button>
+              {reviewingSections ? 'Reviewing…' : 'Review'}
+            </Button>
           )}
 
-          <button
+          <Button
+            size="sm"
+            variant="outline"
             onClick={handleDownloadOverleafZip}
             disabled={downloadingZip}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-2xs disabled:opacity-50"
             title="Download complete Overleaf project (.zip containing main.tex & resumeforge.cls)"
           >
-            {downloadingZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
-            Overleaf (.zip)
-          </button>
+            {downloadingZip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderArchive className="h-3.5 w-3.5" />}
+            Overleaf
+          </Button>
 
-          <button
+          <Button
+            size="sm"
             onClick={handleDownloadPdf}
             disabled={downloading}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs"
           >
-            {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-            {documentId ? 'Download Compiled PDF' : 'Download Preview PDF'}
-          </button>
+            {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {documentId ? 'Download PDF' : 'Export PDF'}
+          </Button>
         </div>
       </div>
 
@@ -192,11 +198,11 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
       )}
 
       {/* Realistic 8.5" x 11" Paper Container */}
-      <div className="overflow-x-auto p-4 bg-slate-200/60 rounded-2xl flex justify-center border border-slate-300/60 shadow-inner">
+      <div className="flex justify-center overflow-x-auto rounded border border-slate-200 bg-slate-100 p-4 dark:border-slate-800 dark:bg-slate-950">
         <div
           ref={printRef}
           id="resume-printable-document"
-          className="bg-white text-slate-900 shadow-xl rounded-sm p-8 sm:p-12 w-full max-w-[800px] min-h-[1050px] space-y-4 font-serif text-[13px] leading-normal"
+          className="resume-paper bg-white text-slate-900 shadow-xl rounded-sm p-8 sm:p-12 w-full max-w-[800px] min-h-[1050px] space-y-4 font-serif text-[13px] leading-normal"
           style={{
             fontFamily: '"Computer Modern", "Latin Modern Roman", "Times New Roman", Times, serif',
           }}

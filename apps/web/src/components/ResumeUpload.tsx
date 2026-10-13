@@ -1,38 +1,85 @@
 import React, { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
-  UploadCloud,
-  FileText,
-  CheckCircle2,
   AlertCircle,
-  Loader2,
   ArrowRight,
-  Copy,
+  Briefcase,
   Check,
+  CheckCircle2,
   Code,
+  Copy,
+  FileText,
+  FolderGit2,
+  GitBranch,
+  Globe2,
+  GraduationCap,
+  Link as LinkIcon,
+  Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  UploadCloud,
+  UserRound,
+  Wrench,
+  X,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ResumeUploadResult } from '../types';
 import { SectionHeader } from './ui/section-header';
+import { Button } from './ui/button';
+import { IconButton, Panel } from './ui/panel';
 
 interface ResumeUploadProps {
   onUploadSuccess: () => void;
 }
 
+const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = ['pdf', 'docx', 'txt'];
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResumeUploadResult | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'markdown'>('overview');
   const [copied, setCopied] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setError(null);
+  const selectFile = (nextFile?: File) => {
+    if (!nextFile) return;
+
+    const extension = nextFile.name.split('.').pop()?.toLowerCase() || '';
+    if (!ALLOWED_EXTENSIONS.includes(extension)) {
+      setFile(null);
       setResult(null);
-      setActiveTab('overview');
+      setError('Choose a PDF, DOCX, or TXT file.');
+      return;
     }
+
+    if (nextFile.size > MAX_FILE_SIZE) {
+      setFile(null);
+      setResult(null);
+      setError('This file is larger than the 15 MB upload limit.');
+      return;
+    }
+
+    setFile(nextFile);
+    setError(null);
+    setResult(null);
+    setActiveTab('overview');
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    setResult(null);
+    setError(null);
+    setActiveTab('overview');
   };
 
   const handleUpload = async () => {
@@ -40,10 +87,13 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
     setLoading(true);
     setError(null);
     try {
-      const data = await api.uploadResume(file);
-      setResult(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to upload and parse resume.');
+      setResult(await api.uploadResume(file));
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : 'Could not upload and parse this resume.',
+      );
     } finally {
       setLoading(false);
     }
@@ -55,222 +105,309 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
       await navigator.clipboard.writeText(result.markdown_text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
+    } catch (copyError) {
+      setError(
+        copyError instanceof Error
+          ? copyError.message
+          : 'Could not copy the extracted Markdown.',
+      );
     }
   };
 
+  const summary = result?.parsed_summary;
+  const profile = summary?.profile;
+  const metrics: Array<{ label: string; value: number; icon: LucideIcon }> = result
+    ? [
+        { label: 'Experience', value: summary?.experiences_count || 0, icon: Briefcase },
+        { label: 'Education', value: summary?.educations_count || 0, icon: GraduationCap },
+        { label: 'Skills', value: summary?.skills_count || 0, icon: Wrench },
+        { label: 'Projects', value: summary?.projects_count || 0, icon: FolderGit2 },
+        { label: 'Credentials', value: summary?.certifications_count || 0, icon: CheckCircle2 },
+      ]
+    : [];
+
   return (
-    <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6">
-      <div className="mb-6">
-        <SectionHeader
-          title="Import an existing resume"
-          description="Upload a PDF, DOCX, or TXT file. The extracted content is added to your profile for review."
-        />
-      </div>
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <SectionHeader
+        title="Import resume"
+        description="Turn an existing PDF, DOCX, or text résumé into editable profile data."
+      />
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6">
-        <label
-          htmlFor="resume-upload"
-          className={`flex min-h-52 flex-col items-center justify-center border border-dashed rounded-xl p-8 cursor-pointer transition-colors ${
-            file
-              ? 'border-slate-500 bg-slate-50'
-              : 'border-slate-300 hover:border-slate-500 hover:bg-slate-50/50'
-          }`}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+        <Panel
+          title="Resume file"
+          icon={FileText}
+          className="lg:col-span-3"
+          bodyClassName="p-4 sm:p-5"
         >
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded border border-slate-200 bg-white text-slate-600">
-            {file ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
-          </div>
-          <span className="text-sm font-medium text-slate-800">
-            {file ? file.name : 'Choose a file or drop it here'}
-          </span>
-          <span className="text-xs text-slate-500 mt-1">PDF, DOCX, or TXT · 15 MB maximum</span>
-          <input
-            id="resume-upload"
-            type="file"
-            accept=".pdf,.docx,.txt"
-            className="hidden"
-            onChange={handleFileChange}
-            disabled={loading}
-          />
-        </label>
+          <label
+            htmlFor="resume-upload"
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              if (event.currentTarget === event.target) setDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              if (!loading) selectFile(event.dataTransfer.files[0]);
+            }}
+            className={`upload-dropzone ${
+              dragActive ? 'upload-dropzone-active' : ''
+            } ${loading ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
+          >
+            <span className="upload-dropzone-icon">
+              {file ? <FileText className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
+            </span>
+            <span className="mt-3 text-[13px] font-semibold text-slate-800">
+              {dragActive ? 'Drop the file to select it' : 'Drop a resume here, or choose a file'}
+            </span>
+            <span className="mt-1 text-xs text-slate-500">PDF, DOCX, or TXT · up to 15 MB</span>
+            <input
+              id="resume-upload"
+              type="file"
+              accept=".pdf,.docx,.txt"
+              className="hidden"
+              onChange={(event) => {
+                selectFile(event.target.files?.[0]);
+                event.target.value = '';
+              }}
+              disabled={loading}
+            />
+          </label>
 
-        {file && !loading && !result && (
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={handleUpload}
-              className="flex items-center gap-2 rounded bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+          {file && (
+            <div className="mt-3 flex items-center gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+                <FileText className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium text-slate-800">{file.name}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(file.size)}</p>
+              </div>
+              {!loading && (
+                <IconButton type="button" onClick={clearFile} aria-label="Remove selected file">
+                  <X className="h-4 w-4" />
+                </IconButton>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div
+              className="mt-3 flex items-start gap-3 rounded border border-rose-200 bg-rose-50 p-3 text-rose-700"
+              role="alert"
             >
-              Import resume
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {loading && (
-          <div className="mt-8 p-6 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-            <div className="text-center">
-              <p className="text-sm font-semibold text-slate-800">Processing Resume with AI...</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Extracting plain text, parsing structured JSON schema, and populating master database.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-6 p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-rose-800">Parsing Error</p>
-              <p className="text-xs text-rose-600 mt-0.5">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {result && (
-          <div className="mt-6 p-6 rounded-xl bg-emerald-50/80 border border-emerald-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-base">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                Resume Parsed Successfully!
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex bg-emerald-100/70 p-1 rounded-xl text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('overview')}
-                    className={`px-3 py-1.5 rounded-lg transition-all ${
-                      activeTab === 'overview'
-                        ? 'bg-white text-emerald-900 shadow-2xs'
-                        : 'text-emerald-700 hover:text-emerald-900'
-                    }`}
-                  >
-                    Overview
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('markdown')}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
-                      activeTab === 'markdown'
-                        ? 'bg-white text-emerald-900 shadow-2xs'
-                        : 'text-emerald-700 hover:text-emerald-900'
-                    }`}
-                  >
-                    <Code className="w-3.5 h-3.5" />
-                    Extracted Markdown
-                  </button>
-                </div>
-                <button
-                  onClick={onUploadSuccess}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
-                >
-                  View in Master Context <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium">Import could not be completed</p>
+                <p className="mt-0.5 text-xs leading-relaxed">{error}</p>
               </div>
             </div>
+          )}
 
-            {activeTab === 'overview' ? (
-              <>
-                {/* Candidate Identity & Contact Preview */}
-                <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-2xs space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-100 pb-2">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">
-                        {result.parsed_summary?.name || 'Parsed Candidate'}
-                      </h3>
-                      {result.parsed_summary?.profile?.headline && (
-                        <p className="text-xs text-slate-600 font-medium mt-0.5">
-                          {result.parsed_summary.profile.headline}
-                        </p>
-                      )}
-                    </div>
-                    {result.parsed_summary?.profile?.location && (
-                      <span className="text-xs text-slate-500 font-medium">
-                        📍 {result.parsed_summary.profile.location}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 pt-1">
-                    {result.parsed_summary?.profile?.email && (
-                      <span>✉️ {result.parsed_summary.profile.email}</span>
-                    )}
-                    {result.parsed_summary?.profile?.phone && (
-                      <span>📞 {result.parsed_summary.profile.phone}</span>
-                    )}
-                    {result.parsed_summary?.profile?.linkedin_url && (
-                      <span>🔗 {result.parsed_summary.profile.linkedin_url}</span>
-                    )}
-                    {result.parsed_summary?.profile?.github_url && (
-                      <span>🐙 {result.parsed_summary.profile.github_url}</span>
-                    )}
-                    {result.parsed_summary?.profile?.website_url && (
-                      <span>🌐 {result.parsed_summary.profile.website_url}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
-                  <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
-                    <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.experiences_count || 0}</p>
-                    <p className="text-xs text-slate-500">Experiences</p>
-                  </div>
-                  <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
-                    <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.educations_count || 0}</p>
-                    <p className="text-xs text-slate-500">Education</p>
-                  </div>
-                  <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
-                    <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.skills_count || 0}</p>
-                    <p className="text-xs text-slate-500">Skills</p>
-                  </div>
-                  <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
-                    <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.projects_count || 0}</p>
-                    <p className="text-xs text-slate-500">Projects</p>
-                  </div>
-                  <div className="p-3 bg-white rounded-lg border border-emerald-100 shadow-2xs">
-                    <p className="text-xl font-bold text-slate-900">{result.parsed_summary?.certifications_count || 0}</p>
-                    <p className="text-xs text-slate-500">Certifications</p>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="bg-white rounded-xl border border-emerald-100 p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-700">Layout-Preserving Extracted Markdown</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full">
-                      {result.markdown_text ? `${result.markdown_text.split('\n').length} lines · ${result.markdown_text.length} chars` : '0 lines'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyMarkdown}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Markdown</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="max-h-96 overflow-y-auto rounded-lg bg-slate-950 p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap leading-relaxed select-text border border-slate-800">
-                  {result.markdown_text || 'No Markdown extracted.'}
-                </div>
+          {loading ? (
+            <div className="mt-4 flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+              <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-slate-500" />
+              <div>
+                <p className="text-[13px] font-medium text-slate-800">Reading and structuring your resume</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  Extracting text, identifying sections, and writing the parsed records to your profile.
+                </p>
               </div>
-            )}
+            </div>
+          ) : file ? (
+            <div className="mt-4 flex justify-end">
+              <Button type="button" onClick={handleUpload} disabled={!file || Boolean(result)}>
+                {result ? (
+                  <>
+                    <Check className="h-4 w-4" /> Imported
+                  </>
+                ) : (
+                  <>
+                    Import resume <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel
+          title="What gets imported"
+          icon={UserRound}
+          className="lg:col-span-2"
+        >
+          <ol className="space-y-4">
+            {[
+              ['Contact details', 'Name, headline, location, links, and summary.'],
+              ['Career history', 'Experience, education, projects, and certifications.'],
+              ['Skills', 'Named skills grouped into editable categories.'],
+            ].map(([title, description], index) => (
+              <li key={title} className="flex gap-3">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 text-[10px] font-semibold text-slate-500 dark:border-slate-700">
+                  {index + 1}
+                </span>
+                <div>
+                  <p className="text-xs font-medium text-slate-700">{title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-800">
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Review the parsed profile after import. You can edit or remove every imported entry.
+            </p>
           </div>
-        )}
+        </Panel>
       </div>
+
+      {result && (
+        <Panel
+          title="Import result"
+          icon={CheckCircle2}
+          actions={
+            <Button size="sm" onClick={onUploadSuccess}>
+              Review profile <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          }
+          bodyClassName="p-0"
+        >
+          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              <div>
+                <p className="text-[13px] font-medium text-slate-800">Resume imported successfully</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  The extracted records are now available in your career profile.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex w-fit items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => setActiveTab('overview')}
+                className={`result-tab ${activeTab === 'overview' ? 'result-tab-active' : ''}`}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('markdown')}
+                className={`result-tab ${activeTab === 'markdown' ? 'result-tab-active' : ''}`}
+              >
+                <Code className="h-3.5 w-3.5" /> Markdown
+              </button>
+            </div>
+          </div>
+
+          {activeTab === 'overview' ? (
+            <div className="space-y-5 p-4 sm:p-5">
+              <div className="rounded border border-slate-200 p-4 dark:border-slate-800">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {summary?.name || profile?.full_name || 'Parsed candidate'}
+                    </h3>
+                    {profile?.headline && (
+                      <p className="mt-1 text-[13px] text-slate-500">{profile.headline}</p>
+                    )}
+                  </div>
+                  {profile?.location && (
+                    <span className="entry-link">
+                      <MapPin className="h-3 w-3" /> {profile.location}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                  {profile?.email && (
+                    <ContactItem icon={Mail} label={profile.email} />
+                  )}
+                  {profile?.phone && (
+                    <ContactItem icon={Phone} label={profile.phone} />
+                  )}
+                  {profile?.linkedin_url && (
+                    <ContactItem icon={LinkIcon} label={profile.linkedin_url} />
+                  )}
+                  {profile?.github_url && (
+                    <ContactItem icon={GitBranch} label={profile.github_url} />
+                  )}
+                  {profile?.website_url && (
+                    <ContactItem icon={Globe2} label={profile.website_url} />
+                  )}
+                  {!profile?.email &&
+                    !profile?.phone &&
+                    !profile?.linkedin_url &&
+                    !profile?.github_url &&
+                    !profile?.website_url && (
+                      <p className="text-xs text-slate-400">No contact details were detected.</p>
+                    )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {metrics.map(({ label, value, icon: MetricIcon }) => (
+                  <div key={label} className="stat-tile">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <MetricIcon className="h-3.5 w-3.5" />
+                      <span className="text-[11px] font-medium">{label}</span>
+                    </div>
+                    <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium text-slate-700">Extracted Markdown</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {result.markdown_text
+                      ? `${result.markdown_text.split('\n').length} lines · ${result.markdown_text.length.toLocaleString()} characters`
+                      : 'No Markdown was returned.'}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyMarkdown}
+                  disabled={!result.markdown_text}
+                >
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? 'Copied' : 'Copy Markdown'}
+                </Button>
+              </div>
+              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-200">
+                {result.markdown_text || 'No Markdown extracted.'}
+              </pre>
+            </div>
+          )}
+        </Panel>
+      )}
     </div>
   );
 };
+
+const ContactItem: React.FC<{
+  icon: LucideIcon;
+  label: string;
+}> = ({ icon: Icon, label }) => (
+  <span className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-500">
+    <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+    <span className="truncate">{label}</span>
+  </span>
+);

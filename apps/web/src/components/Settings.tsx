@@ -1,24 +1,41 @@
-import React, { useState, useEffect } from 'react';
-import { AISettings } from '../types';
-import { api } from '../services/api';
+import React, { useEffect, useState } from 'react';
 import {
-  Cpu,
-  Globe,
-  Check,
   AlertCircle,
-  RefreshCw,
-  Save,
-  Loader2,
-  Key,
+  Check,
+  Cpu,
+  Database,
+  ExternalLink,
   Eye,
   EyeOff,
-  ExternalLink,
+  Globe,
+  Key,
+  Loader2,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
+import { AISettings } from '../types';
+import { api } from '../services/api';
 import { SectionHeader } from './ui/section-header';
+import { Button } from './ui/button';
+import { IconButton, Panel } from './ui/panel';
+import { Field, TextArea, TextInput } from './ui/field';
 
 interface SettingsProps {
   onSettingsSaved: (settings: AISettings) => void;
 }
+
+const DEFAULT_SETTINGS: AISettings = {
+  provider: 'ollama',
+  ollama_endpoint: 'http://localhost:11434',
+  openrouter_endpoint: 'https://openrouter.ai/api/v1',
+  api_key: '',
+  model_name: 'qwen3.5:9b',
+  embedding_model: 'nomic-embed-text',
+  temperature: 0.7,
+  custom_instructions: '',
+};
 
 const OLLAMA_PRESETS = [
   'qwen3.5:9b',
@@ -37,458 +54,483 @@ const OPENROUTER_PRESETS = [
   { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
 ];
 
-export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
-  const [settings, setSettings] = useState<AISettings>({
-    provider: 'ollama',
-    ollama_endpoint: 'http://localhost:11434',
-    openrouter_endpoint: 'https://openrouter.ai/api/v1',
-    api_key: '',
-    model_name: 'qwen3.5:9b',
-    embedding_model: 'nomic-embed-text',
-    temperature: 0.7,
-    custom_instructions: '',
-  });
+type StatusMessage = { type: 'success' | 'error'; text: string };
 
+export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
+  const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [statusMsg, setStatusMsg] = useState<StatusMessage | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const loadSettings = async () => {
-    try {
-      const data = await api.getAiSettings();
-      if (data) {
-        const loaded: AISettings = {
-          provider: data.provider || 'ollama',
-          ollama_endpoint: data.ollama_endpoint || 'http://localhost:11434',
-          openrouter_endpoint: data.openrouter_endpoint || 'https://openrouter.ai/api/v1',
-          api_key: data.api_key || '',
-          model_name: data.model_name || 'qwen3.5:9b',
-          embedding_model: data.embedding_model || 'nomic-embed-text',
-          temperature: typeof data.temperature === 'number' ? data.temperature : 0.7,
-          custom_instructions: data.custom_instructions || '',
-        };
-        setSettings(loaded);
-        testConnection(loaded);
-      } else {
-        testConnection(settings);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    loadSettings();
-  }, []);
 
   const testConnection = async (targetSettings?: AISettings) => {
     const current = targetSettings || settings;
-    const isOllama = (current.provider || 'ollama') === 'ollama';
-    const endpoint = isOllama
-      ? current.ollama_endpoint || 'http://localhost:11434'
-      : current.openrouter_endpoint || 'https://openrouter.ai/api/v1';
+    const isLocalProvider = (current.provider || 'ollama') === 'ollama';
+    const endpoint = isLocalProvider
+      ? current.ollama_endpoint || DEFAULT_SETTINGS.ollama_endpoint
+      : current.openrouter_endpoint || DEFAULT_SETTINGS.openrouter_endpoint || '';
 
     setTesting(true);
     setStatusMsg(null);
     try {
-      const res = await api.getAiHealth({
+      const response = await api.getAiHealth({
         provider: current.provider || 'ollama',
         endpoint,
         api_key: current.api_key || '',
       });
 
-      if (res.connected) {
-        setAvailableModels(res.models || []);
-        setStatusMsg({
-          type: 'success',
-          text: isOllama
-            ? `Connected to Ollama! Found ${res.models?.length || 0} models.`
-            : `Connected to OpenRouter! Access verified for ${res.models?.length || 0}+ models.`,
-        });
-      } else {
+      if (!response.connected) {
         setAvailableModels([]);
         setStatusMsg({
           type: 'error',
-          text: res.error || `Failed to connect to ${isOllama ? 'Ollama' : 'OpenRouter'}. Check endpoint and credentials.`,
+          text:
+            response.error ||
+            `Could not connect to ${isLocalProvider ? 'Ollama' : 'OpenRouter'}. Check the endpoint and credentials.`,
         });
+        return;
       }
-    } catch (err: any) {
+
+      setAvailableModels(response.models || []);
+      setStatusMsg({
+        type: 'success',
+        text: `${isLocalProvider ? 'Ollama' : 'OpenRouter'} responded successfully${
+          response.models?.length ? ` with ${response.models.length} available models` : ''
+        }.`,
+      });
+    } catch (error) {
+      setAvailableModels([]);
       setStatusMsg({
         type: 'error',
-        text: err.message || `Error connecting to ${isOllama ? 'Ollama' : 'OpenRouter'}.`,
+        text:
+          error instanceof Error
+            ? error.message
+            : `Could not connect to ${isLocalProvider ? 'Ollama' : 'OpenRouter'}.`,
       });
     } finally {
       setTesting(false);
     }
   };
 
-  const handleProviderChange = (newProvider: 'ollama' | 'openrouter') => {
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await api.getAiSettings();
+        const loaded: AISettings = {
+          ...DEFAULT_SETTINGS,
+          ...data,
+          provider: data?.provider || 'ollama',
+          temperature:
+            typeof data?.temperature === 'number'
+              ? data.temperature
+              : DEFAULT_SETTINGS.temperature,
+        };
+        setSettings(loaded);
+        await testConnection(loaded);
+      } catch (error) {
+        console.error(error);
+        setStatusMsg({
+          type: 'error',
+          text: error instanceof Error ? error.message : 'Could not load AI settings.',
+        });
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  const handleProviderChange = (provider: 'ollama' | 'openrouter') => {
     setAvailableModels([]);
     setStatusMsg(null);
-    let defaultModel = settings.model_name;
-    if (newProvider === 'openrouter' && (settings.model_name.startsWith('qwen3') || settings.model_name.startsWith('llama3.1:'))) {
-      defaultModel = 'meta-llama/llama-3.3-70b-instruct';
-    } else if (newProvider === 'ollama' && settings.model_name.includes('/')) {
-      defaultModel = 'qwen3.5:9b';
+
+    let modelName = settings.model_name;
+    if (
+      provider === 'openrouter' &&
+      (modelName.startsWith('qwen3') || modelName.startsWith('llama3.1:'))
+    ) {
+      modelName = 'meta-llama/llama-3.3-70b-instruct';
+    } else if (provider === 'ollama' && modelName.includes('/')) {
+      modelName = 'qwen3.5:9b';
     }
-    const updated = {
-      ...settings,
-      provider: newProvider,
-      model_name: defaultModel,
-    };
-    setSettings(updated);
+
+    setSettings({ ...settings, provider, model_name: modelName });
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSaving(true);
     try {
       await api.updateAiSettings(settings);
       onSettingsSaved(settings);
-      setStatusMsg({ type: 'success', text: 'AI configuration saved successfully!' });
-    } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err?.message || 'Failed to save settings.' });
+      setStatusMsg({ type: 'success', text: 'Settings saved.' });
+    } catch (error) {
+      setStatusMsg({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Could not save settings.',
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const isOllama = (settings.provider || 'ollama') === 'ollama';
+  const presets = isOllama
+    ? OLLAMA_PRESETS.map((preset) => ({ id: preset, label: preset }))
+    : OPENROUTER_PRESETS;
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6">
-      <div className="mb-6">
-        <SectionHeader
-          title="AI provider settings"
-          description="Choose a local Ollama server or connect OpenRouter for resume parsing and document tailoring."
-        />
-      </div>
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <SectionHeader
+        title="Settings"
+        description="Configure the model connection used for resume parsing, matching, and document tailoring."
+      />
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6">
-        {/* Provider Switcher */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-2">AI Provider</label>
-          <div className="grid grid-cols-2 gap-3 p-1 bg-slate-100 rounded-xl">
-            <button
-              type="button"
-              onClick={() => handleProviderChange('ollama')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-semibold transition-all ${
-                isOllama
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              <span>Ollama (Local / Remote)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleProviderChange('openrouter')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs font-semibold transition-all ${
-                !isOllama
-                  ? 'bg-white text-indigo-600 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Globe className="w-4 h-4" />
-              <span>OpenRouter (Cloud API)</span>
-            </button>
-          </div>
-        </div>
+      <form onSubmit={handleSave} className="space-y-5">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+          <div className="space-y-5 lg:col-span-4">
+            <Panel title="Provider" icon={Cpu}>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleProviderChange('ollama')}
+                  className={`settings-provider ${isOllama ? 'settings-provider-active' : ''}`}
+                >
+                  <span className="settings-provider-icon"><Cpu className="h-4 w-4" /></span>
+                  <span className="min-w-0 text-left">
+                    <span className="block text-[13px] font-semibold text-slate-900">Ollama</span>
+                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                      Local or self-hosted models
+                    </span>
+                  </span>
+                  {isOllama && <Check className="ml-auto h-4 w-4 text-slate-500" />}
+                </button>
 
-        <form onSubmit={handleSave} className="space-y-6">
-          {/* Provider Specific Settings */}
-          {isOllama ? (
-            <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ollama Base URL (Local or Remote)
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={settings.ollama_endpoint}
-                    onChange={(e) => setSettings({ ...settings, ollama_endpoint: e.target.value })}
-                    placeholder="http://localhost:11434"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500 bg-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => testConnection()}
-                    disabled={testing}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg shrink-0 transition-colors"
-                  >
-                    {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    Test
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Default is <code>http://localhost:11434</code>. For remote Ollama, enter your tunnel or cloud server URL (e.g. Cloudflare tunnel, ngrok, or remote IP).
-                </p>
+                <button
+                  type="button"
+                  onClick={() => handleProviderChange('openrouter')}
+                  className={`settings-provider ${!isOllama ? 'settings-provider-active' : ''}`}
+                >
+                  <span className="settings-provider-icon"><Globe className="h-4 w-4" /></span>
+                  <span className="min-w-0 text-left">
+                    <span className="block text-[13px] font-semibold text-slate-900">OpenRouter</span>
+                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                      Cloud model gateway
+                    </span>
+                  </span>
+                  {!isOllama && <Check className="ml-auto h-4 w-4 text-slate-500" />}
+                </button>
               </div>
+            </Panel>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Remote API Key / Bearer Token <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Key className="w-3.5 h-3.5" />
-                  </div>
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={settings.api_key || ''}
-                    onChange={(e) => setSettings({ ...settings, api_key: e.target.value })}
-                    placeholder="Leave empty for local Ollama without auth"
-                    className="w-full pl-9 pr-10 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500 bg-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
-                  >
-                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Only required if your remote Ollama reverse proxy or cloud tunnel mandates an Authorization Bearer header.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  OpenRouter Base Endpoint
-                </label>
-                <input
-                  type="text"
-                  value={settings.openrouter_endpoint || 'https://openrouter.ai/api/v1'}
-                  onChange={(e) => setSettings({ ...settings, openrouter_endpoint: e.target.value })}
-                  placeholder="https://openrouter.ai/api/v1"
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500 bg-white"
+            <Panel title="Connection status" icon={ShieldCheck}>
+              {testing ? (
+                <StatusRow
+                  icon={<Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+                  title="Testing connection"
+                  description="Checking endpoint and credentials…"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Standard endpoint is <code>https://openrouter.ai/api/v1</code>.
-                </p>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700">OpenRouter API Key</label>
-                  <a
-                    href="https://openrouter.ai/keys"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-800 font-medium"
-                  >
-                    Get API Key <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                      <Key className="w-3.5 h-3.5" />
-                    </div>
-                    <input
-                      type={showApiKey ? 'text' : 'password'}
-                      value={settings.api_key || ''}
-                      onChange={(e) => setSettings({ ...settings, api_key: e.target.value })}
-                      placeholder="sk-or-v1-..."
-                      className="w-full pl-9 pr-10 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500 bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
-                    >
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => testConnection()}
-                    disabled={testing}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shrink-0 transition-colors"
-                  >
-                    {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    Test Key
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Your key is securely stored in your local application database and never shared.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Model Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Active Reasoning / Parsing Model
-              </label>
-              {availableModels.length > 0 ? (
-                <div className="space-y-1.5">
-                  <select
-                    value={settings.model_name}
-                    onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-indigo-500 font-mono bg-white"
-                  >
-                    {!availableModels.includes(settings.model_name) && (
-                      <option value={settings.model_name}>{settings.model_name} (Current)</option>
-                    )}
-                    {availableModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={settings.model_name}
-                    onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
-                    placeholder="Or type custom model ID..."
-                    className="w-full px-2.5 py-1 text-xs rounded-md border border-slate-200 font-mono text-slate-600"
-                  />
-                </div>
+              ) : statusMsg ? (
+                <StatusRow
+                  icon={
+                    statusMsg.type === 'success' ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-rose-600" />
+                    )
+                  }
+                  title={
+                    statusMsg.type === 'success'
+                      ? 'Connection available'
+                      : 'Connection unavailable'
+                  }
+                  description={statusMsg.text}
+                />
               ) : (
-                <input
-                  type="text"
-                  value={settings.model_name}
-                  onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
-                  placeholder={isOllama ? 'qwen3.5:9b' : 'meta-llama/llama-3.3-70b-instruct'}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500"
-                />
+                <p className="text-xs leading-relaxed text-slate-500">
+                  Test the connection after changing the endpoint or credentials.
+                </p>
               )}
 
-              {/* Quick Model Presets Chips */}
-              <div className="mt-2">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                  Popular Presets:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {isOllama
-                    ? OLLAMA_PRESETS.map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setSettings({ ...settings, model_name: preset })}
-                          className={`text-[11px] px-2 py-0.5 rounded-md font-mono border transition-all ${
-                            settings.model_name === preset
-                              ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold'
-                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          {preset}
-                        </button>
-                      ))
-                    : OPENROUTER_PRESETS.map((preset) => (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-4 w-full"
+                onClick={() => testConnection()}
+                disabled={testing}
+              >
+                {testing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Test connection
+              </Button>
+            </Panel>
+
+            <div className="rounded border border-slate-200 p-4 dark:border-slate-800">
+              <div className="flex gap-3">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                <div>
+                  <p className="text-xs font-medium text-slate-700">Stored locally</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    Endpoints, credentials, and prompt preferences stay in this application's database.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-5 lg:col-span-8">
+            <Panel
+              title={isOllama ? 'Ollama connection' : 'OpenRouter connection'}
+              icon={isOllama ? Cpu : Globe}
+            >
+              <div className="space-y-4">
+                <Field
+                  label={isOllama ? 'Base URL' : 'API endpoint'}
+                  hint={
+                    isOllama
+                      ? 'Use localhost for a local server, or enter a remote Ollama endpoint.'
+                      : 'The standard OpenRouter endpoint works for most configurations.'
+                  }
+                >
+                  <TextInput
+                    type="url"
+                    className="font-mono"
+                    value={
+                      isOllama
+                        ? settings.ollama_endpoint
+                        : settings.openrouter_endpoint || DEFAULT_SETTINGS.openrouter_endpoint
+                    }
+                    onChange={(event) =>
+                      setSettings(
+                        isOllama
+                          ? { ...settings, ollama_endpoint: event.target.value }
+                          : { ...settings, openrouter_endpoint: event.target.value },
+                      )
+                    }
+                    placeholder={
+                      isOllama
+                        ? DEFAULT_SETTINGS.ollama_endpoint
+                        : DEFAULT_SETTINGS.openrouter_endpoint
+                    }
+                  />
+                </Field>
+
+                <Field
+                  label={isOllama ? 'API key (optional)' : 'API key'}
+                  hint={
+                    isOllama
+                      ? 'Only needed when your remote proxy requires authentication.'
+                      : 'Create and manage keys from your OpenRouter account.'
+                  }
+                >
+                  <div className="relative">
+                    <Key className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <TextInput
+                      type={showApiKey ? 'text' : 'password'}
+                      className="px-9 font-mono"
+                      value={settings.api_key || ''}
+                      onChange={(event) =>
+                        setSettings({ ...settings, api_key: event.target.value })
+                      }
+                      placeholder={
+                        isOllama ? 'Leave empty for unauthenticated Ollama' : 'sk-or-v1-…'
+                      }
+                    />
+                    <IconButton
+                      type="button"
+                      className="absolute right-1 top-1/2 -translate-y-1/2"
+                      onClick={() => setShowApiKey((visible) => !visible)}
+                      aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                    >
+                      {showApiKey ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </IconButton>
+                  </div>
+                  {!isOllama && (
+                    <a
+                      href="https://openrouter.ai/keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="entry-link mt-2"
+                    >
+                      Manage OpenRouter keys <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </Field>
+              </div>
+            </Panel>
+
+            <Panel title="Models" icon={Database}>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div>
+                  <Field
+                    label="Generation model"
+                    hint="Used for parsing, refinement, and tailored documents."
+                  >
+                    {availableModels.length > 0 ? (
+                      <select
+                        value={settings.model_name}
+                        onChange={(event) =>
+                          setSettings({ ...settings, model_name: event.target.value })
+                        }
+                        className="field-input font-mono"
+                      >
+                        {!availableModels.includes(settings.model_name) && (
+                          <option value={settings.model_name}>
+                            {settings.model_name} (current)
+                          </option>
+                        )}
+                        {availableModels.map((model) => (
+                          <option key={model} value={model}>{model}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <TextInput
+                        type="text"
+                        className="font-mono"
+                        value={settings.model_name}
+                        onChange={(event) =>
+                          setSettings({ ...settings, model_name: event.target.value })
+                        }
+                        placeholder={
+                          isOllama
+                            ? 'qwen3.5:9b'
+                            : 'meta-llama/llama-3.3-70b-instruct'
+                        }
+                      />
+                    )}
+                  </Field>
+
+                  <div className="mt-3">
+                    <p className="group-label mb-2">Presets</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {presets.map((preset) => (
                         <button
                           key={preset.id}
                           type="button"
-                          onClick={() => setSettings({ ...settings, model_name: preset.id })}
-                          className={`text-[11px] px-2 py-0.5 rounded-md font-mono border transition-all ${
+                          onClick={() =>
+                            setSettings({ ...settings, model_name: preset.id })
+                          }
+                          className={`model-preset ${
                             settings.model_name === preset.id
-                              ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold'
-                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                              ? 'model-preset-active'
+                              : ''
                           }`}
                         >
                           {preset.label}
                         </button>
                       ))}
+                    </div>
+                  </div>
                 </div>
+
+                <Field
+                  label="Embedding model"
+                  hint="Used for semantic similarity between job requirements and profile evidence."
+                >
+                  <TextInput
+                    type="text"
+                    className="font-mono"
+                    value={settings.embedding_model || 'nomic-embed-text'}
+                    onChange={(event) =>
+                      setSettings({ ...settings, embedding_model: event.target.value })
+                    }
+                    placeholder="nomic-embed-text"
+                  />
+                </Field>
               </div>
-            </div>
+            </Panel>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Embedding Model (for Semantic Matching)
-              </label>
-              <input
-                type="text"
-                value={settings.embedding_model || 'nomic-embed-text'}
-                onChange={(e) => setSettings({ ...settings, embedding_model: e.target.value })}
-                placeholder="nomic-embed-text"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 font-mono focus:outline-indigo-500"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                Used for vector cosine similarity rankings between job keywords and bullet points.
-              </p>
-            </div>
+            <Panel title="Generation defaults" icon={SlidersHorizontal}>
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-medium text-slate-700">Temperature</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Lower values keep generated content more deterministic.
+                      </p>
+                    </div>
+                    <output className="min-w-10 rounded border border-slate-200 px-2 py-1 text-center font-mono text-xs text-slate-700 dark:border-slate-800">
+                      {settings.temperature.toFixed(2)}
+                    </output>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={settings.temperature}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        temperature: Number.parseFloat(event.target.value),
+                      })
+                    }
+                    className="settings-range w-full"
+                  />
+                  <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+                    <span>Factual</span>
+                    <span>Balanced</span>
+                    <span>Creative</span>
+                  </div>
+                </div>
+
+                <Field
+                  label="Custom instructions"
+                  hint="Applied to tailoring and section review while preserving factual profile data."
+                >
+                  <TextArea
+                    rows={4}
+                    value={settings.custom_instructions || ''}
+                    onChange={(event) =>
+                      setSettings({
+                        ...settings,
+                        custom_instructions: event.target.value,
+                      })
+                    }
+                    placeholder="Emphasize distributed systems and measurable outcomes. Keep bullets concise."
+                  />
+                </Field>
+              </div>
+            </Panel>
           </div>
+        </div>
 
-          {/* Temperature */}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-semibold text-slate-700">Generation Temperature</label>
-              <span className="text-xs font-mono font-bold text-indigo-600">{settings.temperature}</span>
-            </div>
-            <input
-              type="range"
-              min="0.0"
-              max="1.0"
-              step="0.05"
-              value={settings.temperature}
-              onChange={(e) => setSettings({ ...settings, temperature: parseFloat(e.target.value) })}
-              className="w-full accent-indigo-600 cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>Strict / Factual (0.1–0.3)</span>
-              <span>Balanced (0.5–0.7)</span>
-              <span>Creative (1.0)</span>
-            </div>
-          </div>
-
-          {/* Custom Instructions */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Custom Prompt Directives <span className="text-slate-400 font-normal">(Optional)</span>
-            </label>
-            <textarea
-              rows={3}
-              value={settings.custom_instructions || ''}
-              onChange={(e) => setSettings({ ...settings, custom_instructions: e.target.value })}
-              placeholder="e.g., 'Emphasize cloud architecture, distributed systems, and low-latency performance. Keep bullet points quantitative.'"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
-            />
-            <p className="mt-1 text-[11px] text-slate-400">
-              Injected into tailoring and LaTeX section review prompts. Models are instructed to prioritize these directives while preserving factual truth.
-            </p>
-          </div>
-
-          {/* Status Message */}
-          {statusMsg && (
-            <div
-              className={`p-3.5 rounded-xl border flex items-center gap-2 text-xs font-medium ${
-                statusMsg.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  : 'bg-rose-50 text-rose-800 border-rose-200'
-              }`}
-            >
-              {statusMsg.type === 'success' ? (
-                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              )}
-              <span>{statusMsg.text}</span>
-            </div>
-          )}
-
-          <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-all"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Save Configuration
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-xs text-slate-500">
+            Saving applies this provider and model to future parsing and tailoring operations.
+          </p>
+          <Button type="submit" disabled={saving} className="shrink-0">
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {saving ? 'Saving…' : 'Save settings'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 };
+
+const StatusRow: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}> = ({ icon, title, description }) => (
+  <div className="flex items-start gap-3">
+    <span className="mt-0.5 shrink-0">{icon}</span>
+    <div>
+      <p className="text-[13px] font-medium text-slate-700">{title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>
+    </div>
+  </div>
+);

@@ -1,31 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { JobApplication, TailoredDocument } from '../types';
 import { api } from '../services/api';
+import type { LucideIcon } from 'lucide-react';
 import {
   Briefcase,
   Plus,
-  Sparkles,
+  Wand2,
   ExternalLink,
   Trash2,
   FileCode,
   Copy,
   Download,
   Check,
-  ChevronRight,
   Loader2,
   Save,
-  CheckCircle2,
-  TrendingUp,
   Eye,
   X,
   AlertCircle,
   Package,
   FolderArchive,
   Info,
+  Search,
+  FileText,
 } from 'lucide-react';
 import { LatexDocumentPreview } from './LatexDocumentPreview';
 import { RESUMEFORGE_CLASS } from '../utils/latexClass';
 import { SectionHeader } from './ui/section-header';
+import { Button } from './ui/button';
+import { EmptyState, IconButton, Panel } from './ui/panel';
+import { Field, TextArea, TextInput } from './ui/field';
 
 interface JobTrackerProps {
   activeModel: string;
@@ -45,6 +48,8 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const [reviewingSections, setReviewingSections] = useState(false);
   const [reviewedSuccess, setReviewedSuccess] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [applicationQuery, setApplicationQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<JobApplication['status'] | 'all'>('all');
 
   // New Job Modal
   const [newJobOpen, setNewJobOpen] = useState(false);
@@ -302,6 +307,21 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
     counts[job.status] = (counts[job.status] || 0) + 1;
     return counts;
   }, {});
+  const visibleJobs = jobs.filter((job) => {
+    const query = applicationQuery.trim().toLowerCase();
+    const matchesQuery =
+      !query ||
+      job.job_title.toLowerCase().includes(query) ||
+      job.company_name.toLowerCase().includes(query);
+    const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+    return matchesQuery && matchesStatus;
+  });
+  const pipelineMetrics: Array<{ label: string; value: number; icon: LucideIcon }> = [
+    { label: 'Active', value: jobs.length - (statusCounts.rejected || 0), icon: Briefcase },
+    { label: 'Applied', value: statusCounts.applied || 0, icon: Check },
+    { label: 'Interviewing', value: statusCounts.interviewing || 0, icon: Eye },
+    { label: 'Offers', value: statusCounts.offer || 0, icon: FileText },
+  ];
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
@@ -310,30 +330,27 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
         title="Job applications"
         description={
           <>
-            Keep roles, notes, tailored resumes, and cover letters together. Use <strong>{activeModel}</strong> when you are ready to tailor a document.
+            Track each opportunity from saved role to offer, with tailored documents beside the source context.
           </>
         }
         actions={
-          <button
-            onClick={() => setNewJobOpen(true)}
-            className="flex shrink-0 items-center gap-2 rounded bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-          >
-            <Plus className="w-4 h-4" /> Add Application
-          </button>
+          <Button onClick={() => setNewJobOpen(true)}>
+            <Plus className="h-4 w-4" /> Add application
+          </Button>
         }
       />
 
       {jobs.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            ['Active pipeline', jobs.length - (statusCounts.rejected || 0), 'text-indigo-700'],
-            ['Applied', statusCounts.applied || 0, 'text-sky-700'],
-            ['Interviewing', statusCounts.interviewing || 0, 'text-amber-700'],
-            ['Offers', statusCounts.offer || 0, 'text-emerald-700'],
-          ].map(([label, value, color]) => (
-            <div key={String(label)} className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
-              <p className="text-xs font-medium text-slate-500">{label}</p>
-              <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+          {pipelineMetrics.map(({ label, value, icon: MetricIcon }) => (
+            <div key={label} className="stat-tile">
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <MetricIcon className="h-3.5 w-3.5" />
+                <span className="text-[11px] font-medium">{label}</span>
+              </div>
+              <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+                {value}
+              </p>
             </div>
           ))}
         </div>
@@ -352,83 +369,149 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Job Applications List */}
-        <div className="lg:col-span-4 space-y-3">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
-            <h3 className="font-semibold text-slate-900 text-sm mb-3 px-1 flex items-center justify-between">
-              <span>Tracked Roles ({jobs.length})</span>
-            </h3>
-
-            {loading ? (
-              <div className="py-8 text-center text-slate-400">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-500 mb-2" />
-                <p className="text-xs">Loading applications...</p>
+        <div className="space-y-3 lg:col-span-4">
+          <Panel
+            title="Pipeline"
+            icon={Briefcase}
+            count={jobs.length}
+            className="lg:sticky lg:top-20"
+            bodyClassName="p-0 sm:p-0"
+          >
+            <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={applicationQuery}
+                  onChange={(event) => setApplicationQuery(event.target.value)}
+                  placeholder="Search roles or companies"
+                  className="field-input pl-8"
+                  aria-label="Search applications"
+                />
               </div>
-            ) : jobs.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs px-2">
-                No applications yet. Click "Add Application" to paste a job description.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
-                {jobs.map((j) => (
-                  <div
-                    key={j.id}
-                    onClick={() => handleSelectJob(j)}
-                    className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
-                      selectedJob?.id === j.id
-                        ? 'border-indigo-600 bg-indigo-50/40 shadow-xs ring-1 ring-indigo-500/20'
-                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+              <div className="flex gap-1 overflow-x-auto pb-0.5">
+                {(['all', 'saved', 'applied', 'interviewing', 'offer', 'rejected'] as const).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setStatusFilter(status)}
+                    className={`shrink-0 rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                      statusFilter === status
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm leading-snug">{j.job_title}</h4>
-                        <p className="text-xs text-slate-600 font-medium">{j.company_name}</p>
-                      </div>
-                      {j.match_score !== null && j.match_score !== undefined && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
-                          {Math.round(j.match_score)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between mt-3 text-[11px] text-slate-400">
-                      <span className="capitalize px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                        {j.status}
-                      </span>
-                      <span>{j.documents_count || 0} Docs attached</span>
-                    </div>
-                  </div>
+                    {status}
+                    {status !== 'all' && (
+                      <span className="ml-1 opacity-70">{statusCounts[status] || 0}</span>
+                    )}
+                  </button>
                 ))}
               </div>
+            </div>
+
+            {loading ? (
+              <div className="py-12 text-center text-slate-400">
+                <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                <p className="text-xs">Loading applications…</p>
+              </div>
+            ) : jobs.length === 0 ? (
+              <div className="p-4">
+                <EmptyState
+                  title="No applications yet"
+                  hint="Add a role and paste its description to start tailoring."
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setNewJobOpen(true)}>
+                      <Plus className="h-3.5 w-3.5" /> Add application
+                    </Button>
+                  }
+                />
+              </div>
+            ) : visibleJobs.length === 0 ? (
+              <div className="px-4 py-10 text-center">
+                <p className="text-[13px] font-medium text-slate-600">No matching applications</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApplicationQuery('');
+                    setStatusFilter('all');
+                  }}
+                  className="quiet-btn mt-2"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              <div className="max-h-[calc(100vh-280px)] overflow-y-auto p-2">
+                {visibleJobs.map((job) => {
+                  const isSelected = selectedJob?.id === job.id;
+                  return (
+                    <button
+                      key={job.id}
+                      type="button"
+                      onClick={() => handleSelectJob(job)}
+                      className={`group mb-1 w-full rounded p-3 text-left transition-colors last:mb-0 ${
+                        isSelected
+                          ? 'bg-slate-100 dark:bg-slate-800'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold text-slate-900">
+                            {job.job_title}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-slate-500">{job.company_name}</p>
+                        </div>
+                        {job.match_score !== null && job.match_score !== undefined && (
+                          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-500">
+                            {Math.round(job.match_score)}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between gap-2">
+                        <span className={`application-status application-status-${job.status}`}>
+                          {job.status}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {job.documents_count || 0} {(job.documents_count || 0) === 1 ? 'document' : 'documents'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </div>
+          </Panel>
         </div>
 
         {/* Right Column: Tailoring Studio & LaTeX Editor */}
         <div className="lg:col-span-8">
           {selectedJob ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6">
+            <div className="panel overflow-hidden">
               {/* Job Header & Actions */}
-              <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-slate-900">{selectedJob.job_title}</h2>
+              <div className="flex flex-col gap-4 border-b border-slate-200 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5 dark:border-slate-800">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                      {selectedJob.job_title}
+                    </h2>
                     {selectedJob.match_score !== null && selectedJob.match_score !== undefined && (
-                      <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                        <TrendingUp className="w-3.5 h-3.5" />
-                        {Math.round(selectedJob.match_score)}% Match
+                      <span className="chip font-semibold tabular-nums">
+                        {Math.round(selectedJob.match_score)}% match
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-600 font-medium mt-0.5">
+                  <p className="mt-1 text-[13px] text-slate-500">
                     {selectedJob.company_name}
                     {selectedJob.job_url && (
                       <a
                         href={selectedJob.job_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 ml-2 text-indigo-600 hover:underline text-xs"
+                        className="entry-link ml-2"
                       >
-                        <ExternalLink className="w-3 h-3" /> Job Posting
+                        <ExternalLink className="h-3 w-3" /> View posting
                       </a>
                     )}
                   </p>
@@ -439,7 +522,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                     aria-label="Application status"
                     value={selectedJob.status}
                     onChange={(event) => handleStatusChange(event.target.value as JobApplication['status'])}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold capitalize text-slate-700"
+                    className="field-input h-8 w-auto py-0 text-xs font-medium capitalize"
                   >
                     <option value="saved">Saved</option>
                     <option value="applied">Applied</option>
@@ -447,137 +530,150 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                     <option value="offer">Offer</option>
                     <option value="rejected">Rejected</option>
                   </select>
-                  <button
+                  <Button
+                    size="sm"
                     onClick={handleTailorJob}
                     disabled={tailoring}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-all disabled:from-slate-400 disabled:to-slate-400"
                   >
                     {tailoring ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Tailoring with AI...
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Tailoring…
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-4 h-4" />
-                        Tailor with AI ({activeModel})
+                        <Wand2 className="h-4 w-4" />
+                        Tailor documents
                       </>
                     )}
-                  </button>
-                  <button
+                  </Button>
+                  <IconButton
+                    tone="danger"
                     onClick={handleDeleteJob}
-                    className="rounded-xl border border-slate-200 p-2 text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                     aria-label="Delete application"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
 
-              {tailoring && (
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-indigo-900">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Your AI model is analyzing requirements and tailoring evidence
+              <div className="space-y-5 p-4 sm:p-5">
+                {tailoring && (
+                  <div className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-slate-500" />
+                    <div>
+                      <p className="text-[13px] font-medium text-slate-800">Tailoring documents with {activeModel}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Comparing the role requirements with your profile evidence. Keep this page open.
+                      </p>
+                    </div>
                   </div>
-                  <p className="mt-1 pl-6 text-xs text-indigo-700">Analyzing job description against your master profile. Keep this page open while your model processes.</p>
-                </div>
-              )}
+                )}
 
-              {selectedJob.extracted_keywords && selectedJob.extracted_keywords.length > 0 && (
-                <div>
-                  <p className="mb-2 text-xs font-semibold text-slate-500">Detected role keywords</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedJob.extracted_keywords.slice(0, 12).map((keyword) => (
-                      <span key={keyword} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">{keyword}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
+                {(selectedJob.raw_description || selectedJob.notes) && (
+                  <details className="group rounded border border-slate-200 dark:border-slate-800">
+                    <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-xs font-medium text-slate-700">
+                      <span className="flex items-center gap-2">
+                        <FileText className="h-3.5 w-3.5 text-slate-400" />
+                        Role context
+                      </span>
+                      <span className="text-[11px] text-slate-400 group-open:hidden">Show</span>
+                      <span className="hidden text-[11px] text-slate-400 group-open:inline">Hide</span>
+                    </summary>
+                    <div className="space-y-4 border-t border-slate-200 px-3 py-3 dark:border-slate-800">
+                      {selectedJob.notes && (
+                        <div>
+                          <p className="group-label mb-1.5">Notes</p>
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-600">
+                            {selectedJob.notes}
+                          </p>
+                        </div>
+                      )}
+                      {selectedJob.raw_description && (
+                        <div>
+                          <p className="group-label mb-1.5">Job description</p>
+                          <p className="max-h-72 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-600">
+                            {selectedJob.raw_description}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
 
-              {/* AI Tailoring Rationale (if generated) */}
-              {activeDoc?.tailoring_rationale && (
-                <div className="p-4 rounded-xl bg-violet-50/70 border border-violet-200 space-y-1.5">
-                  <div className="flex items-center gap-2 text-violet-900 font-bold text-xs">
-                    <Sparkles className="w-4 h-4 text-violet-600" />
-                    AI Selection & Strategy Rationale:
+                {selectedJob.extracted_keywords && selectedJob.extracted_keywords.length > 0 && (
+                  <div>
+                    <p className="group-label mb-2">Role keywords</p>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedJob.extracted_keywords.slice(0, 12).map((keyword) => (
+                        <span key={keyword} className="chip">{keyword}</span>
+                      ))}
+                    </div>
                   </div>
-                  <p className="text-xs text-violet-950 leading-relaxed">
-                    {activeDoc.tailoring_rationale}
-                  </p>
-                </div>
-              )}
+                )}
+
+                {activeDoc?.tailoring_rationale && (
+                  <div className="rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                      <Wand2 className="h-3.5 w-3.5 text-slate-400" />
+                      Tailoring rationale
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                      {activeDoc.tailoring_rationale}
+                    </p>
+                  </div>
+                )}
 
               {/* Document Tabs & Editor */}
               {selectedJob.documents && selectedJob.documents.length > 0 ? (
                 <div className="space-y-4">
                   {/* Tabs: Document Type & View Mode */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                  <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center dark:border-slate-800">
                     {/* Document Selector */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => setActiveDocType('resume')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                           activeDocType === 'resume'
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:bg-slate-100'
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
                         }`}
                       >
-                        <FileCode className="w-3.5 h-3.5" /> Tailored Resume
+                        Resume
                       </button>
                       <button
                         onClick={() => setActiveDocType('cover_letter')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                           activeDocType === 'cover_letter'
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'text-slate-600 hover:bg-slate-100'
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
                         }`}
                       >
-                        <FileCode className="w-3.5 h-3.5" /> Cover Letter
+                        Cover letter
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {/* AI Review Action Button */}
-                      <button
-                        onClick={handleReviewSections}
-                        disabled={reviewingSections || !editableLatex}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs transition-all disabled:opacity-50"
-                        title="Run AI review across sections using small model to eliminate duplicate bullets and polish phrasing"
-                      >
-                        {reviewingSections ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                        ) : reviewedSuccess ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                        )}
-                        {reviewingSections ? 'Reviewing...' : reviewedSuccess ? 'Deduplicated!' : 'AI Review (Deduplicate)'}
-                      </button>
-
-                      {/* View Mode Toggle: Visual Preview vs LaTeX Code */}
-                      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200/80">
+                    <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
                         <button
                           onClick={() => setViewMode('preview')}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
                             viewMode === 'preview'
-                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                              : 'text-slate-600 hover:text-slate-900'
+                              ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
+                              : 'text-slate-500 hover:text-slate-900'
                           }`}
                         >
-                          <Eye className="w-3.5 h-3.5" /> Live Preview & PDF
+                          <Eye className="h-3.5 w-3.5" /> Preview
                         </button>
                         <button
                           onClick={() => setViewMode('code')}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
                             viewMode === 'code'
-                              ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                              : 'text-slate-600 hover:text-slate-900'
+                              ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
+                              : 'text-slate-500 hover:text-slate-900'
                           }`}
                         >
-                          <FileCode className="w-3.5 h-3.5" /> LaTeX Source (.tex)
+                          <FileCode className="h-3.5 w-3.5" /> Source
                         </button>
-                      </div>
                     </div>
                   </div>
 
@@ -594,144 +690,145 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   ) : (
                     <div className="space-y-3">
                       {/* Sub-toolbar: File tabs & Export actions */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-100/80 p-2 rounded-xl border border-slate-200">
+                      <div className="flex flex-col justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 sm:flex-row sm:items-center dark:border-slate-800 dark:bg-slate-900">
                         {/* File Switcher Tabs */}
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => setCodeFileTab('tex')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
                               codeFileTab === 'tex'
-                                ? 'bg-white text-indigo-700 shadow-2xs border border-slate-200/80'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
+                                : 'text-slate-500 hover:text-slate-900'
                             }`}
                           >
-                            <FileCode className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>{selectedJob.company_name ? `${selectedJob.company_name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${activeDocType}.tex` : 'main.tex'}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">Editable</span>
+                            <FileCode className="h-3.5 w-3.5" />
+                            <span className="max-w-48 truncate">
+                              {selectedJob.company_name ? `${selectedJob.company_name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${activeDocType}.tex` : 'main.tex'}
+                            </span>
                           </button>
 
                           <button
                             onClick={() => setCodeFileTab('cls')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
                               codeFileTab === 'cls'
-                                ? 'bg-white text-emerald-800 shadow-2xs border border-slate-200/80'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
+                                : 'text-slate-500 hover:text-slate-900'
                             }`}
                           >
-                            <Package className="w-3.5 h-3.5 text-emerald-600" />
+                            <Package className="h-3.5 w-3.5" />
                             <span>resumeforge.cls</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">Class File</span>
                           </button>
                         </div>
 
                         {/* Export & Action Buttons */}
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1">
                           {codeFileTab === 'tex' ? (
                             <>
-                              <button
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={handleReviewSections}
                                 disabled={reviewingSections || !editableLatex}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
                                 title="Run section-by-section AI review to eliminate duplicate bullets"
                               >
                                 {reviewingSections ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                 ) : reviewedSuccess ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <Check className="h-3.5 w-3.5" />
                                 ) : (
-                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                  <Wand2 className="h-3.5 w-3.5" />
                                 )}
-                                {reviewingSections ? 'Reviewing...' : reviewedSuccess ? 'Deduplicated!' : 'AI Review (Deduplicate)'}
-                              </button>
+                                {reviewingSections ? 'Reviewing…' : reviewedSuccess ? 'Reviewed' : 'Review'}
+                              </Button>
 
-                              <button
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={handleCopyLatex}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
                                 title="Copy LaTeX source"
                               >
-                                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                                 {copied ? 'Copied' : 'Copy'}
-                              </button>
-                              <button
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={handleDownloadTex}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
                                 title="Download .tex document"
                               >
-                                <Download className="w-3.5 h-3.5" /> .tex
-                              </button>
-                              <button
+                                <Download className="h-3.5 w-3.5" /> .tex
+                              </Button>
+                              <Button
+                                size="sm"
                                 onClick={handleSaveLatex}
-                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-2xs transition-colors"
                               >
-                                {savedDoc ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
+                                {savedDoc ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
                                 {savedDoc ? 'Saved' : 'Save'}
-                              </button>
+                              </Button>
                             </>
                           ) : (
                             <>
-                              <button
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={handleCopyCls}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
                                 title="Copy resumeforge.cls content"
                               >
-                                {copiedCls ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                {copiedCls ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                                 {copiedCls ? 'Copied' : 'Copy .cls'}
-                              </button>
-                              <button
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={handleDownloadCls}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors shadow-2xs"
                                 title="Download resumeforge.cls"
                               >
-                                <Download className="w-3.5 h-3.5" /> .cls
-                              </button>
+                                <Download className="h-3.5 w-3.5" /> .cls
+                              </Button>
                             </>
                           )}
 
                           {/* Overleaf Zip Bundle */}
-                          <button
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={handleDownloadOverleafZip}
                             disabled={downloadingZip}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg shadow-2xs transition-colors"
                             title="Download complete ZIP for Overleaf containing main.tex & resumeforge.cls"
                           >
-                            {downloadingZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderArchive className="w-3.5 h-3.5" />}
-                            Overleaf (.zip)
-                          </button>
+                            {downloadingZip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderArchive className="h-3.5 w-3.5" />}
+                            Overleaf
+                          </Button>
 
-                          <button
+                          <IconButton
                             onClick={() => setShowOverleafGuide(!showOverleafGuide)}
-                            className={`p-1.5 rounded-lg border transition-colors ${
-                              showOverleafGuide ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800'
-                            }`}
+                            className={showOverleafGuide ? 'bg-slate-200 text-slate-900 dark:bg-slate-700' : ''}
                             title="Overleaf import instructions"
                           >
-                            <Info className="w-3.5 h-3.5" />
-                          </button>
+                            <Info className="h-3.5 w-3.5" />
+                          </IconButton>
                         </div>
                       </div>
 
                       {/* Overleaf Quick Guide Banner */}
                       {showOverleafGuide && (
-                        <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200 text-xs text-indigo-900 space-y-2">
-                          <div className="flex items-center justify-between font-bold text-indigo-950">
+                        <div className="space-y-2 rounded border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900">
+                          <div className="flex items-center justify-between font-semibold text-slate-900">
                             <span className="flex items-center gap-1.5">
-                              <ExternalLink className="w-3.5 h-3.5" />
+                              <ExternalLink className="h-3.5 w-3.5" />
                               How to open and edit this resume in Overleaf
                             </span>
-                            <button
-                              onClick={() => setShowOverleafGuide(false)}
-                              className="text-indigo-400 hover:text-indigo-700"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <IconButton onClick={() => setShowOverleafGuide(false)} aria-label="Close guide">
+                              <X className="h-3.5 w-3.5" />
+                            </IconButton>
                           </div>
-                          <p className="text-slate-700 leading-relaxed">
-                            Because this resume uses the custom <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">\documentclass&#123;resumeforge&#125;</code> class, Overleaf needs both your <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">main.tex</code> and <code className="px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">resumeforge.cls</code>.
+                          <p className="leading-relaxed">
+                            Because this resume uses the custom <code className="chip font-mono">\documentclass&#123;resumeforge&#125;</code> class, Overleaf needs both your <code className="chip font-mono">main.tex</code> and <code className="chip font-mono">resumeforge.cls</code>.
                           </p>
-                          <ol className="list-decimal list-inside space-y-1 text-slate-700 pt-1 font-medium">
+                          <ol className="list-inside list-decimal space-y-1 pt-1">
                             <li>Click <strong>Overleaf (.zip)</strong> above to download the ready-to-use project archive.</li>
-                            <li>Go to <a href="https://www.overleaf.com/project" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold hover:text-indigo-800">overleaf.com/project</a> and click <strong>New Project</strong> &rarr; <strong>Upload Project</strong>.</li>
-                            <li>Drag and drop the downloaded <code className="px-1 py-0.5 bg-indigo-100 rounded text-indigo-800 font-mono text-[11px]">.zip</code> file. Overleaf will open and compile it immediately!</li>
+                            <li>Go to <a href="https://www.overleaf.com/project" target="_blank" rel="noreferrer" className="entry-link">overleaf.com/project</a> and click <strong>New Project</strong> &rarr; <strong>Upload Project</strong>.</li>
+                            <li>Upload the downloaded <code className="chip font-mono">.zip</code> file.</li>
                           </ol>
                         </div>
                       )}
@@ -743,7 +840,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                             rows={24}
                             value={editableLatex}
                             onChange={(e) => setEditableLatex(e.target.value)}
-                            className="w-full font-mono text-xs p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 leading-relaxed focus:outline-indigo-500 shadow-inner"
+                            className="w-full rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-100 focus:border-slate-600 focus:outline-none"
                             placeholder="% LaTeX source code..."
                           />
                         </div>
@@ -753,7 +850,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                             <span>Document class file defining formatting, layout geometry, and macros.</span>
                             <span className="font-mono text-[11px] text-slate-400">resumeforge.cls &bull; LaTeX2e</span>
                           </div>
-                          <pre className="max-h-[550px] overflow-y-auto p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-800 font-mono text-xs leading-relaxed select-text shadow-inner">
+                          <pre className="max-h-[550px] select-text overflow-y-auto rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-200">
                             {RESUMEFORGE_CLASS}
                           </pre>
                         </div>
@@ -762,130 +859,141 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   )}
                 </div>
               ) : (
-                <div className="p-12 text-center rounded-2xl bg-slate-50 border border-dashed border-slate-200 space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                    <Sparkles className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-sm font-semibold text-slate-900">No Tailored Document Yet</h4>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Click <strong>"Tailor with AI"</strong> above. Your configured AI model will compare this job description against your master context, pick the most relevant bullet points, and generate custom LaTeX code.
-                  </p>
-                </div>
+                <EmptyState
+                  title="No tailored documents yet"
+                  hint="Generate a resume and cover letter from this role's description and your career profile."
+                  action={
+                    <Button size="sm" onClick={handleTailorJob} disabled={tailoring || !selectedJob.raw_description?.trim()}>
+                      <Wand2 className="h-3.5 w-3.5" /> Tailor documents
+                    </Button>
+                  }
+                />
               )}
             </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-16 text-center text-slate-400">
-              <Briefcase className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-              <p className="text-sm font-medium text-slate-600">Select an application from the left</p>
-              <p className="text-xs text-slate-400 mt-1">Or add a new job to start tailoring your resume.</p>
             </div>
+          ) : (
+            <Panel>
+              <EmptyState
+                title="Select an application"
+                hint="Choose a role from the pipeline, or add a new one to start tailoring."
+                action={
+                  <Button size="sm" variant="outline" onClick={() => setNewJobOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Add application
+                  </Button>
+                }
+              />
+            </Panel>
           )}
         </div>
       </div>
 
       {/* Add Job Modal */}
       {newJobOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
           <form
             onSubmit={handleCreateJob}
-            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4"
+            className="panel max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base">New Job Application</h3>
-              <button
+            <div className="panel-head">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Add application</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Capture the source role before tailoring.</p>
+              </div>
+              <IconButton
                 type="button"
                 onClick={() => {
                   setNewJobOpen(false);
                   setCreateJobError(null);
                 }}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Close add application dialog"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <X className="h-4 w-4" />
+              </IconButton>
             </div>
 
-            {createJobError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{createJobError}</span>
-              </div>
-            )}
+            <div className="space-y-4 p-4 sm:p-5">
+              {createJobError && (
+                <div className="flex items-center gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                  <span>{createJobError}</span>
+                </div>
+              )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Company Name *</label>
-                <input
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Company">
+                  <TextInput
+                    type="text"
+                    required
+                    autoFocus
+                    placeholder="Stripe"
+                    value={newJob.company_name}
+                    onChange={(e) => setNewJob({ ...newJob, company_name: e.target.value })}
+                  />
+                </Field>
+                <Field label="Job title">
+                  <TextInput
+                    type="text"
+                    required
+                    placeholder="Backend Engineer"
+                    value={newJob.job_title}
+                    onChange={(e) => setNewJob({ ...newJob, job_title: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Job posting URL">
+                <TextInput
                   type="text"
-                  required
-                  placeholder="e.g. Stripe"
-                  value={newJob.company_name}
-                  onChange={(e) => setNewJob({ ...newJob, company_name: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
+                  placeholder="https://jobs.example.com/role"
+                  value={newJob.job_url}
+                  onChange={(e) => setNewJob({ ...newJob, job_url: e.target.value })}
                 />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Job Title *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Backend Engineer"
-                  value={newJob.job_title}
-                  onChange={(e) => setNewJob({ ...newJob, job_title: e.target.value })}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
+              </Field>
+
+              <Field
+                label="Job description"
+                hint="Paste the full role description. Tailoring uses this as its source of truth."
+              >
+                <TextArea
+                  rows={8}
+                  placeholder="Responsibilities, requirements, and preferred qualifications…"
+                  value={newJob.raw_description}
+                  onChange={(e) => setNewJob({ ...newJob, raw_description: e.target.value })}
                 />
+              </Field>
+
+              <Field label="Notes" hint="Private reminders such as recruiter details, salary range, or follow-up dates.">
+                <TextArea
+                  rows={3}
+                  placeholder="Recruiter, referral, follow-up…"
+                  value={newJob.notes}
+                  onChange={(e) => setNewJob({ ...newJob, notes: e.target.value })}
+                />
+              </Field>
+
+              <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setNewJobOpen(false);
+                    setCreateJobError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={submittingJob}>
+                  {submittingJob ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Creating…
+                    </>
+                  ) : (
+                    'Create application'
+                  )}
+                </Button>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Job URL (Optional)</label>
-              <input
-                type="text"
-                placeholder="https://jobs.lever.co/..."
-                value={newJob.job_url}
-                onChange={(e) => setNewJob({ ...newJob, job_url: e.target.value })}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Job Description</label>
-              <textarea
-                rows={6}
-                placeholder="Paste the full job description, requirements, and responsibilities here..."
-                value={newJob.raw_description}
-                onChange={(e) => setNewJob({ ...newJob, raw_description: e.target.value })}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-indigo-500"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                You can paste this now or add it later before running AI tailoring.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewJobOpen(false);
-                  setCreateJobError(null);
-                }}
-                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submittingJob}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-semibold shadow-xs transition-all cursor-pointer"
-              >
-                {submittingJob ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Application'
-                )}
-              </button>
             </div>
           </form>
         </div>
