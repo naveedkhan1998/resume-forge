@@ -1,17 +1,56 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --canvas: #f6f7f8;
+  --surface: #ffffff;
+  --surface-subtle: #fafafa;
+  --line: #e2e5e9;
+  --text: #17191c;
+  --muted: #667085;
+}
+
+html.dark {
+  color-scheme: dark;
+  --canvas: #0f1115;
+  --surface: #15181d;
+  --surface-subtle: #191c22;
+  --line: #2a2e36;
+  --text: #f3f4f6;
+  --muted: #98a2b3;
+}
+
 @layer base {
-  body {
-    @apply min-h-screen bg-slate-50 text-slate-900 antialiased;
-    background-image:
-      radial-gradient(circle at 10% 0%, rgb(224 231 255 / 0.65), transparent 28rem),
-      radial-gradient(circle at 90% 12%, rgb(237 233 254 / 0.55), transparent 24rem);
-    background-attachment: fixed;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  html {
+    background: var(--canvas);
   }
 
-  button, a, input, textarea, select {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2;
+  body {
+    min-height: 100vh;
+    margin: 0;
+    color: var(--text);
+    background: var(--canvas);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2;
   }
 
   button:not(:disabled) {
@@ -20,6 +59,253 @@
 
   button:disabled {
     cursor: not-allowed;
-    opacity: 0.6;
+    opacity: 0.55;
+  }
+
+  input,
+  textarea,
+  select {
+    color: var(--text);
+    background: var(--surface);
+  }
+
+  ::selection {
+    color: #fff;
+    background: #334155;
+  }
+}
+
+@layer components {
+  .app-shell {
+    background: var(--canvas);
+  }
+
+  .app-header {
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    border-color: var(--line);
+    backdrop-filter: blur(12px);
+  }
+
+  .app-footer {
+    background: var(--canvas);
+    border-color: var(--line);
+  }
+
+  .brand-mark {
+    color: #fff;
+    background: #17191c;
+    box-shadow: none;
+  }
+
+  .loading-card {
+    min-width: 15rem;
+    padding: 1.5rem;
+    border: 1px solid var(--line);
+    border-radius: 0.375rem;
+    background: var(--surface);
+    box-shadow: 0 4px 16px rgb(15 23 42 / 0.06);
+  }
+
+  .page-title {
+    color: var(--text);
+    font-size: clamp(1.45rem, 2vw, 1.8rem);
+    font-weight: 650;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+  }
+
+  .page-description {
+    max-width: 42rem;
+    margin-top: 0.45rem;
+    color: var(--muted);
+    font-size: 0.8125rem;
+    line-height: 1.55;
+  }
+
+  .workspace-main > div[class*="max-w-"] {
+    max-width: 88rem;
+    padding-top: 2rem;
+  }
+
+  .workspace-main .rounded-2xl {
+    border-radius: 0.5rem;
+  }
+
+  .workspace-main .rounded-xl {
+    border-radius: 0.375rem;
+  }
+
+  .workspace-main .rounded-lg {
+    border-radius: 0.3rem;
+  }
+
+  .workspace-main .bg-white.rounded-2xl,
+  .workspace-main .bg-white.rounded-xl,
+  .workspace-main .bg-white.rounded-lg {
+    background: var(--surface);
+    border-color: var(--line);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.025);
+  }
+
+  .workspace-main input,
+  .workspace-main textarea,
+  .workspace-main select {
+    border-color: var(--line);
+    border-radius: 0.3rem;
+    box-shadow: none;
+  }
+
+  .workspace-main input:focus,
+  .workspace-main textarea:focus,
+  .workspace-main select:focus {
+    border-color: #94a3b8;
+  }
+
+  .profile-overview-grid {
+    gap: 1rem;
+  }
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/80,
+html.dark .bg-white\/90 {
+  background-color: var(--surface);
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/50 {
+  background-color: var(--surface-subtle);
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-slate-100\/90 {
+  background-color: #20242b;
+}
+
+html.dark .bg-slate-200,
+html.dark .bg-slate-200\/60 {
+  background-color: #282d35;
+}
+
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f3f4f6;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #c4c9d2;
+}
+
+html.dark .text-slate-500 {
+  color: #98a2b3;
+}
+
+html.dark .text-slate-400 {
+  color: #7f8998;
+}
+
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-300,
+html.dark .border-slate-300\/60,
+html.dark .border-white\/70 {
+  border-color: var(--line);
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  color: var(--text);
+  background: #111419;
+  border-color: var(--line);
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #667085;
+}
+
+html.dark option {
+  color: var(--text);
+  background: #111419;
+}
+
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-50\/30,
+html.dark .bg-indigo-50\/40,
+html.dark .bg-indigo-100 {
+  background-color: rgb(99 102 241 / 0.1);
+}
+
+html.dark .text-indigo-600,
+html.dark .text-indigo-700 {
+  color: #a5b4fc;
+}
+
+html.dark .border-indigo-100,
+html.dark .border-indigo-200 {
+  border-color: rgb(129 140 248 / 0.25);
+}
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/80,
+html.dark .bg-emerald-100,
+html.dark .bg-emerald-100\/70 {
+  background-color: rgb(16 185 129 / 0.1);
+}
+
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-emerald-900 {
+  color: #6ee7b7;
+}
+
+html.dark .border-emerald-100,
+html.dark .border-emerald-200 {
+  border-color: rgb(52 211 153 / 0.22);
+}
+
+html.dark .bg-rose-50 {
+  background-color: rgb(244 63 94 / 0.1);
+}
+
+html.dark .text-rose-600,
+html.dark .text-rose-700,
+html.dark .text-rose-800 {
+  color: #fda4af;
+}
+
+html.dark .border-rose-200 {
+  border-color: rgb(251 113 133 / 0.24);
+}
+
+html.dark .bg-amber-50 {
+  background-color: rgb(245 158 11 / 0.1);
+}
+
+html.dark .text-amber-700,
+html.dark .text-amber-800 {
+  color: #fcd34d;
+}
+
+html.dark .border-amber-200 {
+  border-color: rgb(251 191 36 / 0.24);
+}
+
+@media (min-width: 1024px) {
+  .workspace-main > div[class*="max-w-"] {
+    padding-inline: 2rem;
+  }
+}
+
+@media print {
+  .app-header,
+  .app-footer,
+  .mobile-nav {
+    display: none;
   }
 }

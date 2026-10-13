@@ -1,83 +1,106 @@
 import React from 'react';
-import { FileText, Briefcase, UploadCloud, Cpu, Sparkles, AlertCircle } from 'lucide-react';
+import {
+  BriefcaseBusiness,
+  CircleUserRound,
+  FileInput,
+  Moon,
+  Settings2,
+  Sun,
+} from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'master' | 'upload' | 'jobs' | 'settings';
   setActiveTab: (tab: 'master' | 'upload' | 'jobs' | 'settings') => void;
   aiConnected: boolean;
   activeModel: string;
+  theme: 'light' | 'dark';
+  onThemeToggle: () => void;
 }
+
+const items = [
+  { id: 'master' as const, label: 'Profile', icon: CircleUserRound },
+  { id: 'upload' as const, label: 'Import', icon: FileInput },
+  { id: 'jobs' as const, label: 'Applications', icon: BriefcaseBusiness },
+  { id: 'settings' as const, label: 'Settings', icon: Settings2 },
+];
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   aiConnected,
   activeModel,
-}) => {
-  const items = [
-    { id: 'master' as const, label: 'Career profile', shortLabel: 'Profile', icon: FileText },
-    { id: 'upload' as const, label: 'Import resume', shortLabel: 'Import', icon: UploadCloud },
-    { id: 'jobs' as const, label: 'Applications', shortLabel: 'Jobs', icon: Briefcase },
-    { id: 'settings' as const, label: 'AI Settings', shortLabel: 'AI', icon: Cpu },
-  ];
+  theme,
+  onThemeToggle,
+}) => (
+  <>
+    <header className="app-header sticky top-0 z-40 border-b">
+      <div className="mx-auto flex h-14 max-w-[88rem] items-center gap-6 px-4 sm:px-6 lg:px-8">
+        <button
+          onClick={() => setActiveTab('master')}
+          className="flex shrink-0 items-center gap-2 text-left"
+          aria-label="Open profile"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-950 text-xs font-bold text-white dark:bg-white dark:text-slate-950">
+            R
+          </span>
+          <span className="hidden text-sm font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:block">
+            ResumeForge
+          </span>
+        </button>
 
-  return (
-    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-16 items-center justify-between gap-4">
-          <button onClick={() => setActiveTab('master')} className="flex items-center gap-3 text-left">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-200">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-bold text-lg text-slate-950 tracking-tight">ResumeForge</span>
-              <p className="hidden text-xs text-slate-500 sm:block">Private, local-first job search workspace</p>
-            </div>
-          </button>
-
-          <nav className="hidden items-center gap-1 rounded-xl bg-slate-100 p-1 lg:flex">
-            {items.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                  activeTab === id
-                    ? 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="h-4 w-4" /> {label}
-              </button>
-            ))}
-          </nav>
-
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                aiConnected
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-rose-50 text-rose-700 border-rose-200'
-              }`}
-          >
-            {aiConnected ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : <AlertCircle className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{aiConnected ? activeModel : 'AI offline'}</span>
-          </button>
-        </div>
-
-        <nav className="grid grid-cols-4 border-t border-slate-100 py-2 lg:hidden">
-          {items.map(({ id, shortLabel, icon: Icon }) => (
+        <nav className="hidden h-full items-center gap-5 md:flex" aria-label="Primary navigation">
+          {items.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex flex-col items-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold ${
-                activeTab === id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500'
+              aria-current={activeTab === id ? 'page' : undefined}
+              className={`relative h-full text-[13px] font-medium ${
+                activeTab === id
+                  ? 'text-slate-950 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-slate-950 dark:text-white dark:after:bg-white'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               }`}
             >
-              <Icon className="h-4 w-4" /> {shortLabel}
+              {label}
             </button>
           ))}
         </nav>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('settings')}
+            className="hidden items-center gap-2 border-r border-slate-200 pr-4 text-xs text-slate-500 hover:text-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:text-slate-100 sm:flex"
+            title={aiConnected ? activeModel : 'Configure AI provider'}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${aiConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+            {aiConnected ? activeModel : 'AI not connected'}
+          </button>
+          <button
+            onClick={onThemeToggle}
+            className="flex h-8 w-8 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
     </header>
-  );
-};
+
+    <nav className="mobile-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:hidden" aria-label="Primary navigation">
+      {items.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => setActiveTab(id)}
+          aria-current={activeTab === id ? 'page' : undefined}
+          className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium ${
+            activeTab === id
+              ? 'text-slate-950 dark:text-white'
+              : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+          }`}
+        >
+          <Icon className="h-[18px] w-[18px]" />
+          {label}
+        </button>
+      ))}
+    </nav>
+  </>
+);

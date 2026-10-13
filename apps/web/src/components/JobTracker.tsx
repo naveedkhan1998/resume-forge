@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { LatexDocumentPreview } from './LatexDocumentPreview';
 import { RESUMEFORGE_CLASS } from '../utils/latexClass';
+import { SectionHeader } from './ui/section-header';
 
 interface JobTrackerProps {
   activeModel: string;
@@ -305,21 +306,22 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Application workspace</p>
-          <h1 className="text-3xl font-bold text-slate-950 tracking-tight">Track less. Apply with intent.</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Organize your pipeline and build evidence-based documents with <strong>{activeModel}</strong>.
-          </p>
-        </div>
-        <button
-          onClick={() => setNewJobOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl shadow-xs transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" /> Add Application
-        </button>
-      </div>
+      <SectionHeader
+        title="Job applications"
+        description={
+          <>
+            Keep roles, notes, tailored resumes, and cover letters together. Use <strong>{activeModel}</strong> when you are ready to tailor a document.
+          </>
+        }
+        actions={
+          <button
+            onClick={() => setNewJobOpen(true)}
+            className="flex shrink-0 items-center gap-2 rounded bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+          >
+            <Plus className="w-4 h-4" /> Add Application
+          </button>
+        }
+      />
 
       {jobs.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

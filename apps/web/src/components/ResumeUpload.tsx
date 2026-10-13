@@ -12,13 +12,13 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { ResumeUploadResult } from '../types';
+import { SectionHeader } from './ui/section-header';
 
 interface ResumeUploadProps {
   onUploadSuccess: () => void;
-  activeModel: string;
 }
 
-export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, activeModel }) => {
+export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,29 +62,29 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6">
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Upload & Ingest Resume</h1>
-        <p className="text-sm text-slate-500 mt-1 max-w-lg mx-auto">
-          Upload your existing resume (PDF, DOCX, TXT). Our local model (<strong>{activeModel}</strong>) will extract and organize every detail into your baseline master profile.
-        </p>
+      <div className="mb-6">
+        <SectionHeader
+          title="Import an existing resume"
+          description="Upload a PDF, DOCX, or TXT file. The extracted content is added to your profile for review."
+        />
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-8">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6">
         <label
           htmlFor="resume-upload"
-          className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer transition-all ${
+          className={`flex min-h-52 flex-col items-center justify-center border border-dashed rounded-xl p-8 cursor-pointer transition-colors ${
             file
-              ? 'border-indigo-400 bg-indigo-50/30'
-              : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50/50'
+              ? 'border-slate-500 bg-slate-50'
+              : 'border-slate-300 hover:border-slate-500 hover:bg-slate-50/50'
           }`}
         >
-          <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 mb-4 shadow-inner">
-            {file ? <FileText className="w-7 h-7" /> : <UploadCloud className="w-7 h-7" />}
+          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded border border-slate-200 bg-white text-slate-600">
+            {file ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
           </div>
-          <span className="font-medium text-slate-800 text-base">
-            {file ? file.name : 'Click to select or drag and drop your resume file'}
+          <span className="text-sm font-medium text-slate-800">
+            {file ? file.name : 'Choose a file or drop it here'}
           </span>
-          <span className="text-xs text-slate-500 mt-1">Supports PDF, DOCX, or TXT (Max 15MB)</span>
+          <span className="text-xs text-slate-500 mt-1">PDF, DOCX, or TXT · 15 MB maximum</span>
           <input
             id="resume-upload"
             type="file"
@@ -99,9 +99,9 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
           <div className="mt-6 flex justify-end">
             <button
               onClick={handleUpload}
-              className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl shadow-sm transition-all"
+              className="flex items-center gap-2 rounded bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
             >
-              Parse with AI ({activeModel})
+              Import resume
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

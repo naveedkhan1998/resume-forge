@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { api } from '../services/api';
 import { diffLines } from '../utils/diff';
+import { SectionHeader } from './ui/section-header';
 import {
   User,
   Briefcase,
@@ -383,36 +384,55 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Master Career Context</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Your exhaustive source-of-truth career history. Edit manually or iterate each section with chat prompts using <strong>{activeModel}</strong>.
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            setResetConfirmText('');
-            setResetError(null);
-            setResetApplications(true);
-            setResetAiSettings(false);
-            setResetOpen(true);
-          }}
-          className="flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 shadow-xs transition-colors hover:bg-rose-50"
-        >
-          <Trash2 className="h-4 w-4" />
-          Reset profile & delete all data
-        </button>
+      <SectionHeader
+        title="Career profile"
+        description={
+          <>
+            Keep your experience, education, skills, and links in one editable profile.
+          </>
+        }
+        actions={
+          <button
+            onClick={() => {
+              setResetConfirmText('');
+              setResetError(null);
+              setResetApplications(true);
+              setResetAiSettings(false);
+              setResetOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-rose-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-rose-300"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete data
+          </button>
+        }
+      />
+
+      <div className="profile-overview-grid grid grid-cols-3 gap-3 sm:grid-cols-5">
+        {[
+          { label: 'Experience', value: context.experiences.length, icon: Briefcase },
+          { label: 'Skills', value: context.skills.length, icon: Wrench },
+          { label: 'Projects', value: context.projects.length, icon: FolderGit2 },
+          { label: 'Education', value: context.educations.length, icon: GraduationCap },
+          { label: 'Credentials', value: context.certifications.length, icon: Award },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} className="border-t border-slate-200 py-3 dark:border-slate-800">
+            <div className="mb-2 flex h-6 w-6 items-center justify-center text-slate-400 dark:text-slate-500">
+              <Icon className="h-4 w-4" />
+            </div>
+            <p className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{value}</p>
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
         {/* Left Column: Personal Info & Summary */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="xl:col-span-2 space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
             <div className="flex items-center gap-2 mb-4 text-slate-900 font-semibold">
               <User className="w-5 h-5 text-indigo-600" />
-              <span>Contact & Personal Info</span>
+              <span>Personal details</span>
             </div>
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
@@ -639,7 +659,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
         </div>
 
         {/* Right Column: Work Experience & Education & Projects */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className="xl:col-span-3 space-y-8">
           {/* Work Experience */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
             <div className="flex items-center justify-between mb-6">

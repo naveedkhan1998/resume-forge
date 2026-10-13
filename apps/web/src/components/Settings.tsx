@@ -13,8 +13,8 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
-  Sparkles,
 } from 'lucide-react';
+import { SectionHeader } from './ui/section-header';
 
 interface SettingsProps {
   onSettingsSaved: (settings: AISettings) => void;
@@ -159,12 +159,11 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
 
   return (
     <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6">
-      <div className="text-center mb-8">
-        <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">AI Intelligence Core</p>
-        <h1 className="text-3xl font-bold text-slate-950 tracking-tight">Configure Your LLM Provider</h1>
-        <p className="text-sm text-slate-500 mt-1 max-w-lg mx-auto">
-          Choose between zero-latency local/remote Ollama or cloud models via OpenRouter for resume parsing and tailoring.
-        </p>
+      <div className="mb-6">
+        <SectionHeader
+          title="AI provider settings"
+          description="Choose a local Ollama server or connect OpenRouter for resume parsing and document tailoring."
+        />
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6">
