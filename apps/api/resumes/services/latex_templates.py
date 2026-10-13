@@ -19,8 +19,8 @@ def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = 
     text = str(text)
 
     # 1. Unicode hyphens, dashes, and minuses -> standard ASCII hyphen
-    # U+2010 (hyphen), U+2011 (non-breaking hyphen), U+2012 (figure dash), U+2212 (minus sign)
-    for u in ("\u2010", "\u2011", "\u2012", "\u2212"):
+    # U+2010-U+2014 (hyphens and dashes), U+2212 (minus sign)
+    for u in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"):
         text = text.replace(u, "-")
 
     # 2. Narrow, non-breaking, thin, and invisible spaces -> standard ASCII space
@@ -85,6 +85,7 @@ def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = 
         text = normalize_experience_duration_text(text, expected_years)
 
     # 4f. LaTeX Math Delimiters in I/O, CI/CD, and metrics
+    text = text.replace(r"$>$", r"\textgreater{}").replace(r"$<$", r"\textless{}")
     text = re.sub(r"(\s|^)(?:\$|\\\$)?<\s*(?:\$|\\\$)?\s*([0-9]+)\s*(?:\$|\\\$)?\s*s\b", r"\1sub-\2s", text, flags=re.IGNORECASE)
     text = re.sub(r"(?:\$|\\\$)\s*C[I1l]/CD\s*(?:\$|\\\$)?(?=\b|\W|$)", "CI/CD", text)
     text = re.sub(r"\bCI/CD(?:\$|\\\$)", "CI/CD", text)
@@ -113,6 +114,12 @@ def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = 
     # 4k. Consolidate raw LaTeX Technical Skills block if present in document
     if r"\section{Technical Skills}" in text:
         text = consolidate_raw_latex_skills(text)
+
+    text = re.sub(
+        r"\n%-----------CERTIFICATIONS-----------\s*(?=\\end\{document\})",
+        "\n",
+        text,
+    )
 
     return text
 
@@ -363,8 +370,8 @@ def escape_latex(text: Any) -> str:
         '}': r'\}',
         '~': r'\textasciitilde{}',
         '^': r'\textasciicircum{}',
-        '>': r'$>$',
-        '<': r'$<$',
+        '>': r'\textgreater{}',
+        '<': r'\textless{}',
     }
     return "".join(specials.get(char, char) for char in text)
 
@@ -490,6 +497,7 @@ RESUMEFORGE_CLASS = r"""% ResumeForge shared resume/cover-letter styling.
 \RequirePackage{fancyhdr}
 \RequirePackage{hyperref}
 \RequirePackage{tabularx}
+\RequirePackage{array}
 \RequirePackage{titlesec}
 \RequirePackage{xcolor}
 
@@ -516,9 +524,9 @@ RESUMEFORGE_CLASS = r"""% ResumeForge shared resume/cover-letter styling.
   \end{tabular*}\vspace{1pt}}
 \newcommand{\resumeProjectHeading}[2]{%
   \item
-  \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
-    \small #1 & #2 \\
-  \end{tabular*}\vspace{1pt}}
+  \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X >{\raggedleft\arraybackslash}p{0.24\textwidth}}
+    \small #1 & \small #2 \\
+  \end{tabularx}\vspace{1pt}}
 \newcommand{\resumeSubItem}[1]{\resumeItem{#1}}
 \renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
 \newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0pt,label={}]}
@@ -544,19 +552,14 @@ RESUME_LATEX_TEMPLATE = r"""%-------------------------
 
 <<SUMMARY_SECTION>>
 
-%-----------EXPERIENCE-----------
 <<EXPERIENCE_SECTION>>
 
-%-----------PROJECTS-----------
 <<PROJECTS_SECTION>>
 
-%-----------EDUCATION-----------
 <<EDUCATION_SECTION>>
 
-%-----------TECHNICAL SKILLS-----------
 <<SKILLS_SECTION>>
 
-%-----------CERTIFICATIONS-----------
 <<CERTIFICATIONS_SECTION>>
 
 \end{document}
@@ -778,16 +781,27 @@ class LatexGenerator:
             cert_lines.append(r"\resumeSubHeadingListEnd")
             cert_section = "\n".join(cert_lines)
 
-        result = (
-            RESUME_LATEX_TEMPLATE
-            .replace("<<HEADING_BLOCK>>", heading_block)
-            .replace("<<SUMMARY_SECTION>>", summary_section)
-            .replace("<<EXPERIENCE_SECTION>>", exp_section)
-            .replace("<<PROJECTS_SECTION>>", proj_section)
-            .replace("<<EDUCATION_SECTION>>", edu_section)
-            .replace("<<SKILLS_SECTION>>", skills_section)
-            .replace("<<CERTIFICATIONS_SECTION>>", cert_section)
-        )
+        section_values = {
+            "<<SUMMARY_SECTION>>": summary_section,
+            "<<EXPERIENCE_SECTION>>": (
+                "%-----------EXPERIENCE-----------\n" + exp_section if exp_section else ""
+            ),
+            "<<PROJECTS_SECTION>>": (
+                "%-----------PROJECTS-----------\n" + proj_section if proj_section else ""
+            ),
+            "<<EDUCATION_SECTION>>": (
+                "%-----------EDUCATION-----------\n" + edu_section if edu_section else ""
+            ),
+            "<<SKILLS_SECTION>>": (
+                "%-----------TECHNICAL SKILLS-----------\n" + skills_section if skills_section else ""
+            ),
+            "<<CERTIFICATIONS_SECTION>>": (
+                "%-----------CERTIFICATIONS-----------\n" + cert_section if cert_section else ""
+            ),
+        }
+        result = RESUME_LATEX_TEMPLATE.replace("<<HEADING_BLOCK>>", heading_block)
+        for placeholder, section_value in section_values.items():
+            result = result.replace(placeholder, section_value)
         result = normalize_unicode_and_latex_text(result, expected_years=expected_years)
         if not validate_latex_document(result):
             raise ValueError("Generated resume LaTeX failed structural validation.")

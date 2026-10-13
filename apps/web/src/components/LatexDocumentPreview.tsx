@@ -294,9 +294,12 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
                                   <span className="ml-2 inline-flex gap-1.5 font-normal not-italic">
                                     {item.links.map((link, linkIndex) => (
                                       link.url && (
-                                        <a key={`${link.url}-${linkIndex}`} href={link.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline">
-                                          {link.label}
-                                        </a>
+                                        <React.Fragment key={`${link.url}-${linkIndex}`}>
+                                          {linkIndex > 0 && <span className="text-slate-400">/</span>}
+                                          <a href={link.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline">
+                                            {link.label}
+                                          </a>
+                                        </React.Fragment>
                                       )
                                     ))}
                                   </span>

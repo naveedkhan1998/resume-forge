@@ -87,4 +87,69 @@ describe('parseLatexDocument', () => {
       expect.objectContaining({ type: 'project', title: 'AWS Solutions Architect', subtitle: 'Amazon' }),
     ]);
   });
+
+  it('renders generated resume content without leaking LaTeX formatting', () => {
+    const source = String.raw`
+\begin{document}
+\begin{center}
+  \textbf{\Huge \scshape Jane Doe} \\ \vspace{2pt}
+  \small Platform Engineer \\ \vspace{2pt}
+  \small 555-0100 \enspace\textbar\enspace
+  \href{mailto:jane@example.com}{jane@example.com} \enspace\textbar\enspace
+  Toronto, ON \enspace\textbar\enspace
+  \href{https://example.com}{Portfolio}
+\end{center}
+\section{Professional Summary}
+\small{Engineer building reliable systems.}
+%-----------EXPERIENCE-----------
+\section{Experience}
+\resumeSubHeadingListStart
+\resumeSubheading{Engineer}{2022 -- Present}{Example Corp}{Remote}
+\resumeItemListStart
+\resumeItem{Scaled throughput from 20 to $>$1,000 requests/minute.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+%-----------PROJECTS-----------
+\section{Projects}
+\resumeSubHeadingListStart
+\resumeProjectHeading{\textbf{Trading Platform} \enspace\textbar\enspace
+\emph{Real-time trading toolkit} \enspace\textbar\enspace Lead Engineer
+\enspace\textbar\enspace \emph{Python, Django, Celery}}{
+\href{https://github.com/example/trading}{Code} / \href{https://example.com/trading}{Live}}
+\resumeSubHeadingListEnd
+\end{document}`;
+
+    const document = parseLatexDocument(source);
+    const summary = document.sections.find(({ title }) => title === 'Professional Summary');
+    const experience = document.sections.find(({ title }) => title === 'Experience');
+    const projects = document.sections.find(({ title }) => title === 'Projects');
+
+    expect(document.contactItems).toEqual([
+      { label: '555-0100' },
+      { label: 'jane@example.com', url: 'mailto:jane@example.com' },
+      { label: 'Toronto, ON' },
+      { label: 'Portfolio', url: 'https://example.com' },
+    ]);
+    expect(summary?.items).toEqual([
+      expect.objectContaining({ type: 'paragraph', content: 'Engineer building reliable systems.' }),
+    ]);
+    expect(experience?.items).toContainEqual(
+      expect.objectContaining({
+        type: 'bullet',
+        content: 'Scaled throughput from 20 to >1,000 requests/minute.',
+      }),
+    );
+    expect(projects?.items).toEqual([
+      expect.objectContaining({
+        type: 'project',
+        title: 'Trading Platform',
+        subtitle: 'Real-time trading toolkit | Lead Engineer | Python, Django, Celery',
+        date: '',
+        links: [
+          { label: 'Code', url: 'https://github.com/example/trading' },
+          { label: 'Live', url: 'https://example.com/trading' },
+        ],
+      }),
+    ]);
+  });
 });

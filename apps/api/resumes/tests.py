@@ -23,6 +23,7 @@ from .models import (
 from .services.latex_templates import (
     LatexGenerator,
     escape_latex,
+    normalize_unicode_and_latex_text,
     normalize_url,
     validate_latex_document,
 )
@@ -35,6 +36,11 @@ from .services.tailor_service import TailorService
 
 
 class OllamaServiceJsonTests(SimpleTestCase):
+    def test_api_key_is_sent_as_bearer_token(self):
+        service = OllamaService(provider="openrouter", api_key="test-key")
+
+        self.assertEqual(service._get_headers()["Authorization"], "Bearer test-key")
+
     def test_decode_json_accepts_fenced_output(self):
         result = OllamaService._decode_json('```json\n{"status": "ok"}\n```')
 
@@ -151,7 +157,7 @@ class ResumeParserNormalizationTests(SimpleTestCase):
             experience["bullet_points"],
             [
                 "Managed client delivery.",
-                "Acme — Billing platform: Reduced invoice processing time by 30%.",
+                "Acme - Billing platform: Reduced invoice processing time by 30%.",
             ],
         )
         self.assertEqual(experience["technologies"], ["Python", "Django", "PostgreSQL"])
@@ -220,6 +226,11 @@ class ResumeParserPersistenceTests(TestCase):
 
 
 class LatexGenerationTests(SimpleTestCase):
+    def test_normalizes_en_and_em_dashes_for_pdf_fonts(self):
+        normalized = normalize_unicode_and_latex_text("Cloud – Native — Systems")
+
+        self.assertEqual(normalized, "Cloud - Native - Systems")
+
     def test_escape_latex_handles_backslashes_and_special_symbols(self):
         escaped = escape_latex(r"C:\Users\Jane\Projects & Dev #1")
 
@@ -522,6 +533,23 @@ class LatexGenerationEnhancedTests(SimpleTestCase):
         self.assertNotIn(r"\small \\ \vspace{2pt}", latex)
         self.assertTrue(validate_latex_document(latex))
 
+    def test_resume_omits_empty_section_markers_and_prose_math(self):
+        latex = LatexGenerator.generate_resume(
+            profile={"full_name": "Jane Doe"},
+            experiences=[{
+                "role": "Engineer",
+                "company": "Example",
+                "bullet_points": ["Scaled throughput to >1,000 requests with <50ms latency."],
+            }],
+        )
+
+        self.assertIn(r"\textgreater{}1,000", latex)
+        self.assertIn(r"\textless{}50ms", latex)
+        self.assertNotIn(r"$>$", latex)
+        self.assertNotIn(r"$<$", latex)
+        self.assertNotIn("%-----------CERTIFICATIONS-----------", latex)
+        self.assertNotIn("%-----------PROJECTS-----------", latex)
+
     def test_resume_renders_certifications_section(self):
         profile = {"full_name": "Jane Doe"}
         certs = [
@@ -743,6 +771,52 @@ class OverleafExportEndpointTests(TestCase):
             self.assertIn("main.tex", namelist)
             self.assertIn("resumeforge.cls", namelist)
             self.assertIn("Custom Overleaf", zf.read("main.tex").decode("utf-8"))
+
+
+class DocumentSourceNormalizationEndpointTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="document_source_user")
+        self.client.force_login(self.user)
+        application = JobApplication.objects.create(
+            user=self.user,
+            company_name="Acme",
+            job_title="Engineer",
+        )
+        self.document = TailoredDocument.objects.create(
+            application=application,
+            doc_type="resume",
+            latex_source=(
+                "\\documentclass{resumeforge}\n"
+                "\\begin{document}\n"
+                "Cloud – Native with $>$1,000 requests.\n"
+                "%-----------CERTIFICATIONS-----------\n\n"
+                "\\end{document}"
+            ),
+        )
+
+    def test_job_detail_normalizes_legacy_latex_for_the_editor(self):
+        response = self.client.get(f"/api/jobs/{self.document.application_id}")
+
+        self.assertEqual(response.status_code, 200)
+        source = response.json()["documents"][0]["latex_source"]
+        self.assertIn(r"Cloud - Native with \textgreater{}1,000 requests.", source)
+        self.assertNotIn("%-----------CERTIFICATIONS-----------", source)
+
+    def test_document_update_persists_normalized_latex(self):
+        response = self.client.put(
+            f"/api/documents/{self.document.id}",
+            data=json.dumps({
+                "latex_source": (
+                    "\\documentclass{resumeforge}\n"
+                    "\\begin{document}Latency $<$50ms – verified.\\end{document}"
+                ),
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.document.refresh_from_db()
+        self.assertIn(r"Latency \textless{}50ms - verified.", self.document.latex_source)
 
 
 class SectionReviewAndDeduplicationTests(TestCase):
@@ -1061,8 +1135,8 @@ class LatexUnicodeAndSemanticSanitizationTests(TestCase):
 
         raw = "Scaled throughput from 20 to >1,000 ops/min with <50ms p99 latency & 80% cost savings."
         escaped = escape_latex(raw)
-        self.assertIn(r"$>$1,000 ops/min", escaped)
-        self.assertIn(r"$<$50ms", escaped)
+        self.assertIn(r"\textgreater{}1,000 ops/min", escaped)
+        self.assertIn(r"\textless{}50ms", escaped)
         self.assertIn(r"80\%", escaped)
         self.assertIn(r"\&", escaped)
 
@@ -1344,8 +1418,3 @@ class LatexUnicodeAndSemanticSanitizationTests(TestCase):
         metrics_8y = {"display_years": 8, "display_str": "8+ years", "date_range_str": "May 2018 to Present"}
         review_prompt_8y = build_review_system_prompt(metrics_8y)
         self.assertIn("Candidate has 8+ years of professional engineering experience (May 2018 to Present)", review_prompt_8y)
-
-
-
-
-

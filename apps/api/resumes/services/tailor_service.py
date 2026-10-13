@@ -157,6 +157,7 @@ class TailorService:
             "github_url": profile.github_url if profile else "",
             "summary": profile.summary if profile else "",
         }
+        source_resume_text = profile.raw_resume_text if profile else ""
 
         experiences = list(user.experiences.values(
             'company', 'role', 'location', 'start_date', 'end_date', 'is_current', 'bullet_points', 'technologies'
@@ -174,6 +175,7 @@ class TailorService:
 
         return {
             "profile": profile_dict,
+            "source_resume_text": source_resume_text,
             "experiences": experiences,
             "educations": educations,
             "skills": skills,
@@ -486,10 +488,22 @@ class TailorService:
             raise ValueError("Add resume experience or projects to your master profile before tailoring.")
 
         custom_instructions = ai_settings.custom_instructions.strip() if ai_settings else ""
+        source_resume_text = str(master_data.get("source_resume_text", "")).strip()
+        structured_context = {
+            key: value for key, value in master_data.items() if key != "source_resume_text"
+        }
         user_prompt = (
-            f"Candidate profile:\n{json.dumps(master_data, separators=(',', ':'))}\n\n"
-            f"Target: {application.job_title} at {application.company_name}\n"
-            f"Job description:\n{application.raw_description.strip()[:16000]}\n"
+            "Use the structured candidate context below as the source for all resume and "
+            "cover-letter content. Every claim must be supported by it; do not infer or "
+            "invent missing facts.\n"
+            "STRUCTURED CANDIDATE CONTEXT (JSON):\n"
+            f"{json.dumps(structured_context, ensure_ascii=False, indent=2)}\n\n"
+            "ORIGINAL RESUME TEXT (verification only; do not copy unrelated content):\n"
+            f"{source_resume_text[:20000]}\n\n"
+            f"TARGET ROLE: {application.job_title}\n"
+            f"TARGET COMPANY: {application.company_name}\n"
+            "JOB DESCRIPTION (the requirements to match):\n"
+            f"{application.raw_description.strip()[:16000]}\n"
         )
         if custom_instructions:
             user_prompt += (

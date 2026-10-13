@@ -54,6 +54,7 @@ function extractLinks(text: string): ParsedLink[] {
 interface CommandOccurrence {
   args: string[];
   index: number;
+  endIndex: number;
 }
 
 function extractCommandOccurrences(source: string, command: string, count: number): CommandOccurrence[] {
@@ -76,7 +77,7 @@ function extractCommandOccurrences(source: string, command: string, count: numbe
       if (depth !== 0) break;
       args.push(source.slice(start, position - 1));
     }
-    if (args.length === count) results.push({ args, index: commandIndex });
+    if (args.length === count) results.push({ args, index: commandIndex, endIndex: position });
     cursor = Math.max(position, cursor + command.length);
   }
   return results;
@@ -84,6 +85,48 @@ function extractCommandOccurrences(source: string, command: string, count: numbe
 
 function extractCommandArguments(source: string, command: string, count: number): string[][] {
   return extractCommandOccurrences(source, command, count).map(({ args }) => args);
+}
+
+function stripLatexComments(source: string): string {
+  return source
+    .split('\n')
+    .map((line) => {
+      for (let index = 0; index < line.length; index += 1) {
+        if (line[index] !== '%') continue;
+        let precedingBackslashes = 0;
+        for (let cursor = index - 1; cursor >= 0 && line[cursor] === '\\'; cursor -= 1) {
+          precedingBackslashes += 1;
+        }
+        if (precedingBackslashes % 2 === 0) return line.slice(0, index);
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+function parseInlineContactItems(text: string): ParsedLink[] {
+  const items: ParsedLink[] = [];
+  const links = extractCommandOccurrences(text, '\\href', 2);
+  let cursor = 0;
+
+  const addPlainItems = (value: string) => {
+    cleanLatex(value)
+      .split('|')
+      .map((label) => label.trim())
+      .filter(Boolean)
+      .forEach((label) => items.push({ label }));
+  };
+
+  for (const link of links) {
+    addPlainItems(text.slice(cursor, link.index));
+    items.push({
+      url: cleanLatexUrl(link.args[0]),
+      label: cleanLatex(link.args[1]),
+    });
+    cursor = link.endIndex;
+  }
+  addPlainItems(text.slice(cursor));
+  return items;
 }
 
 // Clean LaTeX escaping & formatting commands into readable text
@@ -95,6 +138,7 @@ export function cleanLatex(text: string): string {
     .replace(/\\textit\{([^}]*)\}/g, '$1')
     .replace(/\\emph\{([^}]*)\}/g, '$1')
     .replace(/\\small\{([^}]*)\}/g, '$1')
+    .replace(/\$([<>]=?)\$/g, '$1')
     .replace(/\\scshape\s*/g, '')
     .replace(/\\Huge\s*/g, '')
     .replace(/\\large\s*/g, '')
@@ -108,6 +152,8 @@ export function cleanLatex(text: string): string {
     .replace(/\\textasciitilde\{\}/g, '~')
     .replace(/\\textasciicircum\{\}/g, '^')
     .replace(/\\textbackslash\{\}/g, '\\')
+    .replace(/\\textgreater\{\}/g, '>')
+    .replace(/\\textless\{\}/g, '<')
     .replace(/\\enspace/g, ' ')
     .replace(/\\(?:small|normalsize|raggedright|textnormal)\b/g, '')
     .replace(/\\textbar/g, '|')
@@ -120,12 +166,13 @@ export function cleanLatex(text: string): string {
 }
 
 export function parseLatexDocument(source: string): ParsedDocument {
-  const isCoverLetter = source.includes('Dear Hiring Manager') || source.includes('Sincerely');
+  const uncommentedSource = stripLatexComments(source);
+  const isCoverLetter = uncommentedSource.includes('Dear Hiring Manager') || uncommentedSource.includes('Sincerely');
 
   if (isCoverLetter) {
-    return parseCoverLetter(source);
+    return parseCoverLetter(uncommentedSource);
   }
-  return parseResume(source);
+  return parseResume(uncommentedSource);
 }
 
 function parseResume(source: string): ParsedDocument {
@@ -158,14 +205,7 @@ function parseResume(source: string): ParsedDocument {
       }
       // Contact line
       const contactLine = lines[lines.length - 1];
-      const links = extractLinks(contactLine);
-      const rawParts = contactLine
-        .replace(/\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g, '')
-        .split(/\$\|\$|\||\\textbar/)
-        .map((part) => cleanLatex(part))
-        .filter(Boolean)
-        .map((label) => ({ label }));
-      doc.contactItems = [...rawParts, ...links];
+      doc.contactItems = parseInlineContactItems(contactLine);
     }
   }
 
@@ -208,13 +248,21 @@ function parseResume(source: string): ParsedDocument {
           location: cleanLatex(args[3]),
         });
       } else if (command === 'project') {
-        const headingParts = args[0].split(/\$\|\$|\||\\textbar/);
+        const headingText = args[0].replace(
+          /\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g,
+          '',
+        );
+        const headingParts = headingText
+          .split(/\$\|\$|\||\\textbar/)
+          .map((part) => cleanLatex(part))
+          .filter(Boolean);
+        const links = extractLinks(`${args[0]} ${args[1]}`);
         section.items.push({
           type: 'project',
-          title: cleanLatex(headingParts[0] || ''),
-          subtitle: cleanLatex(headingParts[1] || ''),
-          date: cleanLatex(args[1]),
-          links: extractLinks(args[0]),
+          title: headingParts[0] || '',
+          subtitle: headingParts.slice(1).join(' | '),
+          date: links.length > 0 ? '' : cleanLatex(args[1]),
+          links,
         });
       } else {
         section.items.push({
@@ -283,7 +331,7 @@ function parseCoverLetter(source: string): ParsedDocument {
 
   const centerMatch = source.match(/\\begin\{center\}([\s\S]*?)\\end\{center\}/i);
   if (centerMatch) {
-    doc.contactItems = extractLinks(centerMatch[1]);
+    doc.contactItems = parseInlineContactItems(centerMatch[1]);
   }
 
   const dateMatch = source.match(/\\textbf\{Date:\}\s*([^\\]+)/i);

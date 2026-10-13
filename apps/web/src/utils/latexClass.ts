@@ -10,11 +10,27 @@ export const RESUMEFORGE_CLASS = `% ResumeForge shared resume/cover-letter styli
 
 \\RequirePackage[T1]{fontenc}
 \\RequirePackage[english]{babel}
+\\RequirePackage{textcomp}
+\\RequirePackage{iftex}
+\\ifPDFTeX
+  \\RequirePackage[utf8]{inputenc}
+  \\DeclareUnicodeCharacter{2011}{-}
+  \\DeclareUnicodeCharacter{2010}{-}
+  \\DeclareUnicodeCharacter{2012}{-}
+  \\DeclareUnicodeCharacter{2013}{--}
+  \\DeclareUnicodeCharacter{2014}{---}
+  \\DeclareUnicodeCharacter{2212}{-}
+  \\DeclareUnicodeCharacter{202F}{\\,}
+  \\DeclareUnicodeCharacter{00A0}{~}
+  \\DeclareUnicodeCharacter{00B5}{\\textmu}
+  \\DeclareUnicodeCharacter{03BC}{\\textmu}
+\\fi
 \\RequirePackage[margin=0.55in,top=0.45in,bottom=0.45in]{geometry}
 \\RequirePackage{enumitem}
 \\RequirePackage{fancyhdr}
 \\RequirePackage{hyperref}
 \\RequirePackage{tabularx}
+\\RequirePackage{array}
 \\RequirePackage{titlesec}
 \\RequirePackage{xcolor}
 
@@ -41,9 +57,9 @@ export const RESUMEFORGE_CLASS = `% ResumeForge shared resume/cover-letter styli
   \\end{tabular*}\\vspace{1pt}}
 \\newcommand{\\resumeProjectHeading}[2]{%
   \\item
-  \\begin{tabular*}{\\textwidth}{l@{\\extracolsep{\\fill}}r}
-    \\small #1 & #2 \\\\
-  \\end{tabular*}\\vspace{1pt}}
+  \\begin{tabularx}{\\textwidth}{>{\\raggedright\\arraybackslash}X >{\\raggedleft\\arraybackslash}p{0.24\\textwidth}}
+    \\small #1 & \\small #2 \\\\
+  \\end{tabularx}\\vspace{1pt}}
 \\newcommand{\\resumeSubItem}[1]{\\resumeItem{#1}}
 \\renewcommand\\labelitemii{$\\vcenter{\\hbox{\\tiny$\\bullet$}}$}
 \\newcommand{\\resumeSubHeadingListStart}{\\begin{itemize}[leftmargin=0pt,label={}]}

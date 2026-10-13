@@ -594,7 +594,7 @@ def get_job_detail(request: HttpRequest, job_id: int):
             "id": d.id,
             "doc_type": d.doc_type,
             "version": d.version,
-            "latex_source": d.latex_source,
+            "latex_source": normalize_unicode_and_latex_text(d.latex_source),
             "tailoring_rationale": d.tailoring_rationale,
             "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
         })
@@ -643,7 +643,7 @@ def tailor_for_job(request: HttpRequest, job_id: int):
 def update_document(request: HttpRequest, doc_id: int, data: UpdateDocumentSchema):
     user = get_current_user(request)
     doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
-    doc.latex_source = data.latex_source
+    doc.latex_source = normalize_unicode_and_latex_text(data.latex_source)
     doc.save()
     return {"status": "success", "message": "LaTeX source updated"}
 
@@ -749,4 +749,3 @@ def review_custom_latex(request: HttpRequest, data: ReviewSectionsSchema):
         ollama_service=service,
     )
     return {"status": "success", "latex_source": reviewed_latex}
-
