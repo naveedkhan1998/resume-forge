@@ -1,13 +1,355 @@
 import re
 from typing import Dict, List, Any, Optional
 from urllib.parse import quote, urlsplit, urlunsplit
+from .experience_calculator import (
+    calculate_experience_metrics,
+    calculate_experience_metrics_from_latex,
+    normalize_experience_duration_text,
+)
+
+
+def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = None) -> str:
+    """
+    Normalizes hidden Unicode characters, whitespace quirks, and common domain/technical errors.
+    Prevents PDF compilers from eating hyphens or misinterpreting spacing.
+    Dynamically aligns experience duration based on calculated work history if available.
+    """
+    if text is None:
+        return ""
+    text = str(text)
+
+    # 1. Unicode hyphens, dashes, and minuses -> standard ASCII hyphen
+    # U+2010 (hyphen), U+2011 (non-breaking hyphen), U+2012 (figure dash), U+2212 (minus sign)
+    for u in ("\u2010", "\u2011", "\u2012", "\u2212"):
+        text = text.replace(u, "-")
+
+    # 2. Narrow, non-breaking, thin, and invisible spaces -> standard ASCII space
+    # U+00A0 (no-break space), U+202F (narrow no-break space), U+2009 (thin space), U+200A (hair space)
+    for u in ("\u00a0", "\u202f", "\u2009", "\u200a"):
+        text = text.replace(u, " ")
+
+    # Zero-width spaces, joiners, BOM
+    for u in ("\u200b", "\u200c", "\u200d", "\ufeff"):
+        text = text.replace(u, "")
+
+    # 3. Micro sign / Greek mu (µs in sub-60 µs)
+    text = text.replace("\u00b5", "u").replace("\u03bc", "u")
+
+    # 4. Domain-specific semantic corrections:
+    # 4a. Inverted Latency Claim (boosting latency -> reducing overall pipeline latency)
+    text = re.sub(
+        r"\b(?:boosting|boosted|increasing|increased)\s+(?:(?:overall|system|pipeline|API|query|end-to-end)\s+)*latency\b",
+        "reducing overall pipeline latency",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # 4b. Garbled Cloud MTTD Metric (Cloud anomaly alert triggers operate in seconds, not microseconds)
+    text = re.sub(
+        r"(?:mean-time-to-detect|MTTD|detection\s+time)\s+(?:to\s+)?sub-?([0-9]+)\s*(?:us|µs|μs)\b",
+        r"mean-time-to-detect to sub-\1s",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(sub-?[0-9]+)\s*(?:us|µs|μs)\b(?=.*(?:anomal|alert|incident|production|cloudwatch|prometheus|mttd|datadog|telemetry))",
+        r"\1s",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # 4c. Inverted Trading Latency Direction (signal-to-order latency, not order-to-signal)
+    text = re.sub(
+        r"\border-to-signal(?:\s+latency)?\b",
+        "signal-to-order latency",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # 4d. Misattributed Cloud Technology: AWS CDK placed under GCP
+    if re.search(r"GCP\s*\([^)]*\bCDK\b[^)]*\)", text):
+        text = re.sub(r"(GCP\s*\([^)]*),\s*CDK([^)]*\))", r"\1\2", text)
+        text = re.sub(r"(GCP\s*\([^)]*)\bCDK,\s*([^)]*\))", r"\1\2", text)
+        text = re.sub(r"(GCP\s*\([^)]*)\bCDK([^)]*\))", r"\1\2", text)
+        aws_m = re.search(r"AWS\s*\([^)]*\)", text)
+        if aws_m and "CDK" not in aws_m.group(0):
+            text = re.sub(r"AWS\s*\(([^)]*)\)", r"AWS (\1, CDK)", text)
+
+    # 4e. Dynamic Experience Duration Normalization (calculated from candidate history / document)
+    if expected_years is None and r"\section{Experience}" in text:
+        calc_metrics = calculate_experience_metrics_from_latex(text)
+        if calc_metrics and calc_metrics.get("display_years"):
+            expected_years = calc_metrics["display_years"]
+
+    if expected_years and expected_years >= 1:
+        text = normalize_experience_duration_text(text, expected_years)
+
+    # 4f. LaTeX Math Delimiters in I/O, CI/CD, and metrics
+    text = re.sub(r"(\s|^)(?:\$|\\\$)?<\s*(?:\$|\\\$)?\s*([0-9]+)\s*(?:\$|\\\$)?\s*s\b", r"\1sub-\2s", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:\$|\\\$)\s*C[I1l]/CD\s*(?:\$|\\\$)?(?=\b|\W|$)", "CI/CD", text)
+    text = re.sub(r"\bCI/CD(?:\$|\\\$)", "CI/CD", text)
+    text = re.sub(r"(?:\$|\\\$)\s*[1Iil]/O\s*(?:\$|\\\$)", "I/O", text)
+    text = re.sub(r"\basync(?:hronous)?\s+(?:\$|\\\$)?\s*[1Iil]/O(?:\$|\\\$)?(?=\b|\W|$)", "asynchronous I/O", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:\$|\\\$)\s*[1Iil]/O(?:\$|\\\$)?(?=\b|\W|$)", "I/O", text)
+
+    # 4g. 'Al' (A + lowercase l) glyph confusion for 'AI' (A + capital I)
+    text = re.sub(r"\b[Aa]l-(ready|powered|driven|native|first|focused|enabled|centric)\b", r"AI-\1", text)
+    text = re.sub(r"\b(Generative\s+|Gen)Al\b", r"\g<1>AI", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bAl/ML\b", "AI/ML", text)
+    text = re.sub(r"(?<!\bet\s)(?<!\bet\.\s)\bAl\b", "AI", text)
+
+    # 4h. Common Typos: asyne -> async, Fast API -> FastAPI
+    text = re.sub(r"\basyne\b", "async", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bFast\s+API\b", "FastAPI", text)
+
+    # 4i. Education layout standardization: fix stray pipes, floating bars, displaced dates
+    if r"\section{Education}" in text:
+        text = clean_education_subheadings(text)
+
+    # 4j. Project heading links truncation prevention: right-align links and prevent overflow
+    if r"\resumeProjectHeading" in text:
+        text = fix_raw_latex_project_headings(text)
+
+    # 4k. Consolidate raw LaTeX Technical Skills block if present in document
+    if r"\section{Technical Skills}" in text:
+        text = consolidate_raw_latex_skills(text)
+
+    return text
+
+
+def clean_education_subheadings(text: str) -> str:
+    """Standardizes Education sub-headings: dates on the right, degree below, no stray pipe characters."""
+    if r"\section{Education}" not in text:
+        return text
+
+    pattern = re.compile(
+        r"(\\section\{Education\}.*?)(?=\\section\{|\\end\{document\}|$)",
+        re.DOTALL
+    )
+
+    def repl_section(m):
+        edu_sec = m.group(1)
+        sub_pattern = re.compile(
+            r"\\resumeSubheading\{([^{}]*)\}\{([^{}]*)\}\{([^{}]*)\}\{([^{}]*)\}"
+        )
+        def repl_sub(sm):
+            a1, a2, a3, a4 = sm.group(1), sm.group(2), sm.group(3), sm.group(4)
+            # Remove any stray pipe characters from a4
+            a4_clean = re.sub(r"^\s*(?:\\enspace)?\\textbar(?:\\enspace)?\s*$", "", a4.strip())
+            a4_clean = re.sub(r"^\s*\|\s*$", "", a4_clean).strip()
+
+            # If a1 has institution | date, split them:
+            if ("|" in a1 or r"\textbar" in a1) and not a2.strip():
+                parts = re.split(r"\s*(?:\\enspace)?\\textbar(?:\\enspace)?\s*|\s*\|\s*", a1)
+                if len(parts) >= 2:
+                    a1 = parts[0].strip()
+                    a2 = parts[1].strip()
+
+            # Standardize date range with double dash: e.g. "2023 2024" or "2023 - 2024" -> "2023 -- 2024"
+            a2 = re.sub(r"\b(\d{4})\s+(\d{4})\b", r"\1 -- \2", a2)
+            a2 = re.sub(r"\b(\d{4})\s*-\s*(\d{4})\b", r"\1 -- \2", a2)
+
+            # Clean trailing/leading pipes from a3
+            a3_clean = re.sub(r"\s*(?:\\enspace)?\\textbar(?:\\enspace)?\s*$", "", a3.strip())
+            a3_clean = re.sub(r"^\s*(?:\\enspace)?\\textbar(?:\\enspace)?\s*", "", a3_clean)
+
+            return f"\\resumeSubheading{{{a1.strip()}}}{{{a2.strip()}}}{{{a3_clean.strip()}}}{{{a4_clean}}}"
+
+        return sub_pattern.sub(repl_sub, edu_sec)
+
+    return pattern.sub(repl_section, text)
+
+
+def fix_raw_latex_project_headings(text: str) -> str:
+    """Fixes project headings in raw LaTeX to right-align links and prevent margin truncation."""
+    def repl(m):
+        full_content = m.group(1)
+        href_idx = full_content.find(r"\href")
+        if href_idx > 0:
+            left_part = full_content[:href_idx].rstrip()
+            left_part = re.sub(r"\s*\\enspace\\textbar\\enspace\s*$", "", left_part).strip()
+            links_part = full_content[href_idx:].strip()
+
+            parts = re.split(r"\s*\\enspace\\textbar\\enspace\s*", left_part)
+            if len(parts) >= 3 and parts[1].startswith(r"\emph{") and parts[2].startswith(r"\emph{"):
+                left_part = f"{parts[0]} \\enspace\\textbar\\enspace {parts[2]}"
+
+            return f"\\resumeProjectHeading{{{left_part}}}{{{links_part}}}"
+        return m.group(0)
+
+    return re.sub(r"\\resumeProjectHeading\{([^\n]+)\}\{\}", repl, text)
+
+
+def streamline_cloud_devops_items(items: List[str]) -> List[str]:
+    """Streamlines Cloud & DevOps skills: eliminates duplicate Kubernetes and redundant generic clouds."""
+    seen = set()
+    raw_list = []
+    has_k8s = any("kubernetes" in x.lower() or "eks" in x.lower() or "gke" in x.lower() for x in items)
+    has_aws_specific = any("cdk" in x.lower() for x in items)
+
+    for item in items:
+        norm = item.strip()
+        low = norm.lower()
+
+        if "kubernetes" in low or "eks" in low or "gke" in low:
+            if "k8s_added" not in seen:
+                raw_list.append("Kubernetes (EKS, GKE)")
+                seen.add("k8s_added")
+                seen.add("kubernetes")
+                seen.add("kubernetes (eks/gke)")
+                seen.add("kubernetes (eks, gke)")
+            continue
+
+        if low in {"aws", "gcp"} and (has_k8s or has_aws_specific):
+            continue
+
+        if low not in seen:
+            seen.add(low)
+            raw_list.append(norm)
+
+    order_priority = {
+        "docker": 1,
+        "kubernetes (eks, gke)": 2,
+        "terraform": 3,
+        "aws cdk": 4,
+        "gitlab ci/cd": 5,
+        "github actions": 6,
+        "nginx": 7,
+    }
+    return sorted(raw_list, key=lambda x: order_priority.get(x.lower(), 99))
+
+
+CANONICAL_SKILL_CATEGORIES = [
+    "Programming Languages",
+    "Frameworks & Backend",
+    "Cloud & DevOps",
+    "Databases & Caching",
+    "Observability & Tools",
+]
+
+
+def classify_skill_item(cat_hint: str, name: str) -> str:
+    n_low = name.lower()
+    c_low = cat_hint.lower()
+
+    if n_low in {"python", "c++", "go", "typescript", "javascript", "sql", "rust", "java", "bash", "c"} or "language" in c_low:
+        return "Programming Languages"
+    if any(db in n_low for db in ["postgres", "redis", "database", "mongo", "dynamo", "elastic", "cassandra", "kafka", "mysql"]):
+        return "Databases & Caching"
+    if any(cd in n_low for cd in ["docker", "kubernetes", "eks", "gke", "terraform", "cdk", "gitlab", "github actions", "nginx", "helm", "aws", "gcp", "azure", "ci/cd", "container"]):
+        return "Cloud & DevOps"
+    if any(obs in n_low for obs in ["prometheus", "grafana", "loki", "tempo", "sentry", "git", "pytest", "datadog", "cloudwatch", "testing", "jest"]):
+        return "Observability & Tools"
+    if "devops" in c_low or "cloud" in c_low:
+        return "Cloud & DevOps"
+    if "observab" in c_low or "tool" in c_low or "test" in c_low:
+        return "Observability & Tools"
+    return "Frameworks & Backend"
+
+
+def consolidate_raw_latex_skills(text: str) -> str:
+    pattern = re.compile(
+        r"(\\section\{Technical Skills\}\s*\\begin\{itemize\}(?:\[[^\]]*\])?\s*\\small\{\\item\{)(.*?)(\}\}\s*\\end\{itemize\})",
+        re.DOTALL
+    )
+    def replacer(m):
+        prefix = m.group(1)
+        inner = m.group(2)
+        suffix = m.group(3)
+
+        matches = re.findall(r"\\textbf\{([^}]+)\}\{:\s*([^}]+)\}", inner)
+        if not matches:
+            return m.group(0)
+
+        categorized: Dict[str, List[str]] = {cat: [] for cat in CANONICAL_SKILL_CATEGORIES}
+        seen: Set[str] = set()
+
+        for cat_title, items_str in matches:
+            # Clean potential period typo e.g. "Redis. Redis Pub/Sub"
+            items_str = re.sub(r"\.\s+", ", ", items_str)
+            parts = [p.strip().rstrip(".") for p in re.split(r"[,;]+", items_str) if p.strip()]
+            for p in parts:
+                p_norm = p.strip()
+                if p_norm.lower() in {"fast api", "fastapi"}:
+                    p_norm = "FastAPI"
+                p_id = p_norm.lower()
+                if p_id in seen:
+                    continue
+                seen.add(p_id)
+                target = classify_skill_item(cat_title, p_norm)
+                categorized[target].append(p_norm)
+
+        # Streamline Cloud & DevOps line (eliminate duplicate Kubernetes and redundant generic clouds)
+        categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
+
+        cat_strings = []
+        for cat in CANONICAL_SKILL_CATEGORIES:
+            items = categorized[cat]
+            if items:
+                cat_tex = cat.replace("&", r"\&")
+                cat_strings.append(f"\\textbf{{{cat_tex}}}{{: " + ", ".join(items) + "}")
+
+        new_inner = " \\\\ \n".join(cat_strings)
+        return f"{prefix}\n{new_inner}\n{suffix}"
+
+    return pattern.sub(replacer, text)
+
+
+def consolidate_skills_to_latex(skills: List[Dict[str, Any]]) -> str:
+    """Consolidates skills list into exactly 5 compact, non-duplicate LaTeX lines."""
+    if not skills:
+        return ""
+
+    categorized: Dict[str, List[str]] = {cat: [] for cat in CANONICAL_SKILL_CATEGORIES}
+    seen_ids: Set[str] = set()
+
+    for sk in skills:
+        cat_hint = str(sk.get("category") or "").strip()
+        name_str = str(sk.get("name") or "").strip().rstrip(".")
+        if not name_str:
+            continue
+        name_str = re.sub(r"\.\s+", ", ", name_str)
+        sub_items = [s.strip().rstrip(".") for s in re.split(r"[,;]+", name_str) if s.strip()]
+        for sub in sub_items:
+            sub_norm = sub.strip()
+            if sub_norm.lower() in {"fast api", "fastapi"}:
+                sub_norm = "FastAPI"
+            sub_id = sub_norm.lower()
+            if sub_id in seen_ids:
+                continue
+            seen_ids.add(sub_id)
+            target_cat = classify_skill_item(cat_hint, sub_norm)
+            categorized[target_cat].append(escape_latex(sub_norm))
+
+    # Streamline Cloud & DevOps line
+    categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
+
+    cat_strings = []
+    for cat in CANONICAL_SKILL_CATEGORIES:
+        items = categorized[cat]
+        if items:
+            cat_tex = escape_latex(cat)
+            cat_strings.append(f"\\textbf{{{cat_tex}}}{{: " + ", ".join(items) + "}")
+
+    if not cat_strings:
+        return ""
+
+    skill_lines = [
+        r"\section{Technical Skills}",
+        r"\begin{itemize}[leftmargin=0.15in, label={}]",
+        r"\small{\item{",
+        " \\\\ \n".join(cat_strings),
+        r"}}",
+        r"\end{itemize}",
+    ]
+    return "\n".join(skill_lines)
 
 
 def escape_latex(text: Any) -> str:
     """Escapes special characters for safe LaTeX compilation."""
     if text is None:
         return ""
-    text = str(text)
+    text = normalize_unicode_and_latex_text(text)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = text.replace('\n', ' ')
     specials = {
@@ -21,6 +363,8 @@ def escape_latex(text: Any) -> str:
         '}': r'\}',
         '~': r'\textasciitilde{}',
         '^': r'\textasciicircum{}',
+        '>': r'$>$',
+        '<': r'$<$',
     }
     return "".join(specials.get(char, char) for char in text)
 
@@ -126,6 +470,21 @@ RESUMEFORGE_CLASS = r"""% ResumeForge shared resume/cover-letter styling.
 
 \RequirePackage[T1]{fontenc}
 \RequirePackage[english]{babel}
+\RequirePackage{textcomp}
+\RequirePackage{iftex}
+\ifPDFTeX
+  \RequirePackage[utf8]{inputenc}
+  \DeclareUnicodeCharacter{2011}{-}
+  \DeclareUnicodeCharacter{2010}{-}
+  \DeclareUnicodeCharacter{2012}{-}
+  \DeclareUnicodeCharacter{2013}{--}
+  \DeclareUnicodeCharacter{2014}{---}
+  \DeclareUnicodeCharacter{2212}{-}
+  \DeclareUnicodeCharacter{202F}{\,}
+  \DeclareUnicodeCharacter{00A0}{~}
+  \DeclareUnicodeCharacter{00B5}{\textmu}
+  \DeclareUnicodeCharacter{03BC}{\textmu}
+\fi
 \RequirePackage[margin=0.55in,top=0.45in,bottom=0.45in]{geometry}
 \RequirePackage{enumitem}
 \RequirePackage{fancyhdr}
@@ -282,12 +641,17 @@ class LatexGenerator:
             heading_lines.append(rf"    \small {contact_line}")
         heading_block = (r" \\ \vspace{2pt}" + "\n").join(heading_lines)
 
+        # Calculate dynamic experience metrics from work history
+        exp_metrics = calculate_experience_metrics(experiences)
+        expected_years = exp_metrics.get("display_years")
+
         # Summary section
         summary_section = ""
         if profile.get("summary"):
+            summary_raw = normalize_experience_duration_text(profile["summary"], expected_years)
             summary_section = (
                 r"\section{Professional Summary}" + "\n" +
-                r"\small{" + escape_latex(profile["summary"]) + r"}" + "\n"
+                r"\small{" + escape_latex(summary_raw) + r"}" + "\n"
             )
 
         # Experience section
@@ -333,17 +697,31 @@ class LatexGenerator:
                     title_parts.append(role)
                 title_markup = r" \enspace\textbar\enspace ".join(title_parts)
 
-                techs = ", ".join(escape_latex(t) for t in proj.get("technologies", []) if str(t).strip())
-                tech_str = rf" \enspace\textbar\enspace \emph{{{techs}}}" if techs else ""
+                # Right side: links and dates
                 links = []
                 if repo_url:
                     links.append(safe_latex_hyperlink(repo_url, "Code"))
                 if live_url:
                     links.append(safe_latex_hyperlink(live_url, "Live"))
-                link_str = rf" \enspace\textbar\enspace {' / '.join(links)}" if links else ""
-                heading = f"{title_markup}{tech_str}{link_str}"
+                link_str = " / ".join(links)
                 date_str = cls._date_range(proj.get("start_date"), proj.get("end_date"))
-                proj_lines.append(f"\\resumeProjectHeading{{{heading}}}{{{date_str}}}")
+                if link_str and date_str:
+                    right_str = f"{link_str} \\enspace\\textbar\\enspace {date_str}"
+                else:
+                    right_str = link_str or date_str
+
+                # Left side: title, subtitle, role, and technologies
+                techs = ", ".join(escape_latex(t) for t in proj.get("technologies", []) if str(t).strip())
+                title_parts = [f"\\textbf{{{title}}}"]
+                if subtitle:
+                    title_parts.append(rf"\emph{{{subtitle}}}")
+                if role:
+                    title_parts.append(role)
+                if techs:
+                    title_parts.append(rf"\emph{{{techs}}}")
+                left_str = r" \enspace\textbar\enspace ".join(title_parts)
+
+                proj_lines.append(f"\\resumeProjectHeading{{{left_str}}}{{{right_str}}}")
                 bullets = proj.get("bullet_points", [])
                 if bullets:
                     proj_lines.append(r"\resumeItemListStart")
@@ -380,30 +758,8 @@ class LatexGenerator:
             edu_lines.append(r"\resumeSubHeadingListEnd")
             edu_section = "\n".join(edu_lines)
 
-        # Skills section
-        skills_section = ""
-        if skills:
-            categories: Dict[str, List[str]] = {}
-            for sk in skills:
-                cat = str(sk.get("category") or "Technical Skills").strip()
-                name = str(sk.get("name") or "").strip()
-                if name:
-                    for sub_name in [n.strip() for n in name.split(",") if n.strip()]:
-                        categories.setdefault(cat, []).append(escape_latex(sub_name))
-
-            skill_lines = [
-                r"\section{Technical Skills}",
-                r"\begin{itemize}[leftmargin=0.15in, label={}]",
-                r"\small{\item{",
-            ]
-            cat_strings = []
-            for cat, items in categories.items():
-                unique_items = list(dict.fromkeys(items))
-                cat_strings.append(f"\\textbf{{{escape_latex(cat)}}}{{: " + ", ".join(unique_items) + "}")
-            skill_lines.append(" \\\\ \n".join(cat_strings))
-            skill_lines.append(r"}}")
-            skill_lines.append(r"\end{itemize}")
-            skills_section = "\n".join(skill_lines)
+        # Skills section (consolidated into 5 compact canonical lines without duplication)
+        skills_section = consolidate_skills_to_latex(skills)
 
         # Certifications section
         cert_section = ""
@@ -432,6 +788,7 @@ class LatexGenerator:
             .replace("<<SKILLS_SECTION>>", skills_section)
             .replace("<<CERTIFICATIONS_SECTION>>", cert_section)
         )
+        result = normalize_unicode_and_latex_text(result, expected_years=expected_years)
         if not validate_latex_document(result):
             raise ValueError("Generated resume LaTeX failed structural validation.")
         return result

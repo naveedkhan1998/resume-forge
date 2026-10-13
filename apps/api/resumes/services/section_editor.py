@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from .ollama_service import OllamaService
+from .latex_templates import normalize_unicode_and_latex_text
 
 
 SECTION_REFINE_PROMPT = """You are an expert resume editor in a multi-turn conversation about one section.
@@ -31,7 +32,7 @@ class SectionEditor:
         if isinstance(current_content, str):
             if not isinstance(proposed_content, str):
                 raise ValueError("Ollama must return text for this section.")
-            return proposed_content.strip()
+            return normalize_unicode_and_latex_text(proposed_content.strip())
 
         if not isinstance(current_content, list) or not isinstance(proposed_content, list):
             raise ValueError("Ollama must return a list for this section.")
@@ -39,7 +40,7 @@ class SectionEditor:
         if section_type in {"experience", "project", "education"}:
             if not all(isinstance(item, str) for item in proposed_content):
                 raise ValueError("Ollama must return a list of bullet point strings.")
-            return list(dict.fromkeys(item.strip() for item in proposed_content if item.strip()))
+            return list(dict.fromkeys(normalize_unicode_and_latex_text(item.strip()) for item in proposed_content if item.strip()))
 
         required_fields = {
             "skills": ("category", "name", "proficiency"),

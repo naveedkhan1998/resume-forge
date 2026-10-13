@@ -354,6 +354,13 @@ class DocumentMarkdownConverter:
                 cleaned.append(line_str)
 
         text = "\n".join(cleaned)
+        # Normalize Unicode hyphens and spaces from extracted PDF/DOCX text
+        for u in ("\u2010", "\u2011", "\u2012", "\u2212"):
+            text = text.replace(u, "-")
+        for u in ("\u00a0", "\u202f", "\u2009", "\u200a"):
+            text = text.replace(u, " ")
+        for u in ("\u200b", "\u200c", "\u200d", "\ufeff"):
+            text = text.replace(u, "")
         # Ensure single blank line around headers
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()

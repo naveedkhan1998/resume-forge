@@ -18,6 +18,7 @@ from ..models import (
 )
 from .ollama_service import OllamaService
 from .pdf_markdown import DocumentMarkdownConverter
+from .latex_templates import normalize_unicode_and_latex_text
 
 logger = logging.getLogger(__name__)
 
@@ -222,11 +223,19 @@ class ResumeParser:
                     if isinstance(default, list) and not isinstance(record[field], list):
                         record[field] = []
                     elif isinstance(default, str):
-                        record[field] = cls._normalize_model_string(
-                            cls.SECTION_MODELS[key],
-                            field,
-                            record[field],
+                        record[field] = normalize_unicode_and_latex_text(
+                            cls._normalize_model_string(
+                                cls.SECTION_MODELS[key],
+                                field,
+                                record[field],
+                            )
                         )
+                if "bullet_points" in record and isinstance(record["bullet_points"], list):
+                    record["bullet_points"] = [
+                        normalize_unicode_and_latex_text(b)
+                        for b in record["bullet_points"]
+                        if str(b).strip()
+                    ]
                 if key == "experiences":
                     current = record["is_current"]
                     record["is_current"] = (
@@ -254,10 +263,17 @@ class ResumeParser:
                                 for technology in technologies
                                 if str(technology).strip()
                             )
-                    record["bullet_points"] = list(dict.fromkeys(record["bullet_points"]))
+                    record["bullet_points"] = [
+                        normalize_unicode_and_latex_text(b)
+                        for b in dict.fromkeys(record["bullet_points"])
+                        if str(b).strip()
+                    ]
                     record["technologies"] = list(dict.fromkeys(record["technologies"]))
                 if key == "skills":
-                    name_raw = str(record.get("name", "")).strip()
+                    name_raw = normalize_unicode_and_latex_text(str(record.get("name", ""))).strip()
+                    cat_raw = normalize_unicode_and_latex_text(str(record.get("category", ""))).strip()
+                    if "cdk" in name_raw.lower() and "gcp" in cat_raw.lower():
+                        record["category"] = "DevOps & Cloud"
                     if "," in name_raw or ";" in name_raw:
                         sub_names = [s.strip() for s in re.split(r"[,;]+", name_raw) if s.strip()]
                         for sub_name in sub_names:

@@ -3,13 +3,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .latex_templates import RESUMEFORGE_CLASS, validate_latex_document
+from .latex_templates import RESUMEFORGE_CLASS, validate_latex_document, normalize_unicode_and_latex_text
 
 
 class LatexCompiler:
     @staticmethod
     def compile_pdf(latex_source: str, timeout: int = 90) -> bytes:
-        if not validate_latex_document(latex_source):
+        cleaned_source = normalize_unicode_and_latex_text(latex_source)
+        if not validate_latex_document(cleaned_source):
             raise ValueError("LaTeX source failed structural validation.")
 
         tectonic = shutil.which("tectonic")
@@ -21,7 +22,7 @@ class LatexCompiler:
         with tempfile.TemporaryDirectory(prefix="resumeforge-latex-") as temp_dir:
             workdir = Path(temp_dir)
             tex_path = workdir / "document.tex"
-            tex_path.write_text(latex_source, encoding="utf-8")
+            tex_path.write_text(cleaned_source, encoding="utf-8")
             (workdir / "resumeforge.cls").write_text(RESUMEFORGE_CLASS, encoding="utf-8")
             try:
                 result = subprocess.run(

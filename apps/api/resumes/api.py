@@ -28,7 +28,7 @@ from .services.resume_parser import ResumeParser
 from .services.tailor_service import TailorService
 from .services.section_editor import SectionEditor
 from .services.latex_compiler import LatexCompiler
-from .services.latex_templates import RESUMEFORGE_CLASS
+from .services.latex_templates import RESUMEFORGE_CLASS, normalize_unicode_and_latex_text
 
 api = NinjaAPI(
     title="ResumeForge API",
@@ -652,7 +652,8 @@ def export_latex(request: HttpRequest, doc_id: int):
     user = get_current_user(request)
     doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
     filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}.tex")
-    response = HttpResponse(doc.latex_source, content_type="application/x-tex")
+    cleaned_source = normalize_unicode_and_latex_text(doc.latex_source)
+    response = HttpResponse(cleaned_source, content_type="application/x-tex; charset=utf-8")
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
@@ -686,9 +687,10 @@ def get_class_file_content(request: HttpRequest):
 def export_overleaf_zip(request: HttpRequest, doc_id: int):
     user = get_current_user(request)
     doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
+    cleaned_source = normalize_unicode_and_latex_text(doc.latex_source)
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("main.tex", doc.latex_source)
+        zf.writestr("main.tex", cleaned_source)
         zf.writestr("resumeforge.cls", RESUMEFORGE_CLASS)
     zip_buffer.seek(0)
     zip_filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}_overleaf.zip")
@@ -698,9 +700,10 @@ def export_overleaf_zip(request: HttpRequest, doc_id: int):
 
 @api.post("/documents/export-zip-custom")
 def export_custom_overleaf_zip(request: HttpRequest, data: ExportCustomZipSchema):
+    cleaned_source = normalize_unicode_and_latex_text(data.latex_source)
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("main.tex", data.latex_source)
+        zf.writestr("main.tex", cleaned_source)
         zf.writestr("resumeforge.cls", RESUMEFORGE_CLASS)
     zip_buffer.seek(0)
     prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{data.company_name}_{data.doc_type}")

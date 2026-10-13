@@ -15,7 +15,14 @@ from ..models import (
     UserAISettings,
 )
 from .ollama_service import OllamaService
-from .latex_templates import LatexGenerator
+from .latex_templates import LatexGenerator, normalize_unicode_and_latex_text
+from .experience_calculator import (
+    calculate_experience_metrics,
+    calculate_experience_metrics_from_latex,
+    calculate_user_experience_metrics,
+    get_experience_prompt_guidelines,
+    normalize_experience_duration_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,30 +31,59 @@ STOPWORDS = {
     "in", "is", "it", "its", "of", "on", "that", "the", "to", "was", "were", "will", "with"
 }
 
-REVIEW_SYSTEM_PROMPT = """You are an expert resume copyeditor and career coach.
+
+def build_review_system_prompt(exp_metrics: Optional[Dict[str, Any]] = None) -> str:
+    exp_guideline = get_experience_prompt_guidelines(exp_metrics or {})
+    return f"""You are an expert resume copyeditor and career coach.
 Your task is to review the bullet points for a single resume section (a specific job role or project).
 
 Rules:
 1. Eliminate all semantic duplicates, redundant phrasings, and logically overlapping points.
 2. If two bullets describe the same accomplishment, combine them into one concise, impactful bullet point or keep the strongest version.
-3. Every bullet point MUST start with a strong active past-tense action verb (e.g., Engineered, Architected, Spearheaded, Scaled, Automated, Built, Deployed).
-4. Preserve all true metrics, percentages, numbers, technologies, and facts. NEVER hallucinate new facts or numbers.
-5. Keep bullets concise (1-2 sentences each). Return between 2 and 4 distinct, polished bullet points (or 1-2 for small projects) as a single JSON object in the exact schema:
-{
+3. Technical & Domain Accuracy:
+   - Experience Duration: {exp_guideline}
+   - Latency: Never write "boosting latency" or "increasing latency" for an optimization. Latency is delay: you "reduce latency", "lower latency", or "slash latency".
+   - Cloud Anomaly Detection: CloudWatch/Prometheus anomaly detection MTTD operates in seconds (e.g., sub-60s) or minutes, NEVER microseconds across cloud networks.
+   - Quantitative Trading: The standard metric is "signal-to-order latency" (time from algorithmic signal evaluation to broker receipt), NEVER "order-to-signal".
+   - Cloud Platform Attribution: AWS CDK belongs strictly to AWS/DevOps alongside Terraform, NEVER under GCP.
+   - Plain Text Notation & Metrics: Write plain text "CI/CD" (never "$CI/CD$"), plain text "asynchronous I/O" or "async I/O" (never "$1/O$" or "$I/O$"), and plain text metrics like "sub-40s" or "<40s" (never tilted math mode like "$<40$ s").
+   - Artificial Intelligence: Write uppercase "AI" (capital A, capital I, e.g. "AI platforms", "AI deployment", "AI-ready", "AI-powered"), never "Al" with lowercase 'l'.
+   - Branding & Typos: Always write "FastAPI" (single word, never "Fast API") and "async" (never "asyne").
+4. Clean Typography:
+   - Use standard ASCII hyphens (-) for compound words (e.g. "high-throughput", "low-latency", "multi-tenant"). Never use non-breaking Unicode hyphens (U+2011) or narrow spaces.
+   - For comparisons, use clean syntax like >1,000 or <60s or sub-40s.
+5. Every bullet point MUST start with a strong active past-tense action verb (e.g., Engineered, Architected, Spearheaded, Scaled, Automated, Built, Deployed).
+6. Preserve all true metrics, percentages, numbers, technologies, and facts. NEVER hallucinate new facts or numbers.
+7. Keep bullets concise (1-2 sentences each). Return between 2 and 4 distinct, polished bullet points (or 1-2 for small projects) as a single JSON object in the exact schema:
+{{
   "bullets": [
     "Polished bullet point 1",
     "Polished bullet point 2"
   ]
-}
+}}
 """
 
-TAILOR_SYSTEM_PROMPT = """You are an expert ATS resume optimizer and career coach.
+
+def build_tailor_system_prompt(exp_metrics: Optional[Dict[str, Any]] = None) -> str:
+    exp_guideline = get_experience_prompt_guidelines(exp_metrics or {})
+    return f"""You are an expert ATS resume optimizer and career coach.
 Your task is to tailor the candidate's existing resume to strongly match the target job description while preserving all factual truth, metrics, employers, and achievements.
 
 Rules:
 - Return ONLY valid JSON in the exact schema below.
 - Preserve factual data. Never invent companies, roles, dates, degrees, metrics, or unsupported technologies.
 - DO NOT truncate or omit the candidate's substantive work history. Maintain all valid experiences and projects from the candidate profile.
+- Technical & Domain Accuracy:
+  - Experience Duration: {exp_guideline}
+  - Latency is delay: always say "reducing latency", "lowering latency", or "cutting latency", NEVER "boosting latency".
+  - Cloud anomaly detection & monitoring MTTD operates in seconds (e.g. "sub-60s"), never microseconds.
+  - Quantitative finance metrics: use "signal-to-order latency", NEVER "order-to-signal".
+  - Cloud stacks: AWS CDK belongs to AWS / DevOps & Infrastructure, never GCP.
+  - Plain text notation: write plain text "CI/CD" (never "$CI/CD$"), "asynchronous I/O" (never "$1/O$" or "$I/O$"), and "sub-40s" / "<40s" (never "$<40$ s").
+  - AI naming: write uppercase "AI" (capital A, capital I, e.g. "AI platforms", "AI deployment", "AI-ready"), never "Al" with lowercase 'l'.
+  - Branding & typos: write "FastAPI" (single word, never "Fast API") and "async" (never "asyne").
+  - Characters: Use standard ASCII hyphens (-) for compound adjectives (high-throughput, low-latency, multi-tenant). Never output Unicode non-breaking hyphens (U+2011) or narrow spaces.
+  - Skills Organization: Group skills into exactly 5 compact categories: Programming Languages, Frameworks & Backend, Cloud & DevOps, Databases & Caching, Observability & Tools. In Cloud & DevOps, streamline to "Docker, Kubernetes (EKS, GKE), Terraform, AWS CDK, GitLab CI/CD, GitHub Actions, Nginx" without repeating Kubernetes.
 - Tailor experience bullet points: Align phrasing with job requirements, highlighting relevant tools, scope, and impact from the candidate's actual work.
 - Prioritize and categorize skills relevant to the target job description.
 - Retain all certifications and education details.
@@ -57,16 +93,16 @@ Rules:
 - Extract top target keywords from the job description.
 
 Required schema:
-{
+{{
   "match_score": 85,
   "extracted_keywords": ["Python", "Kubernetes", "Distributed Systems"],
   "tailoring_rationale": "Prioritized backend scalability work and aligned terminology with the target role.",
-  "tailored_profile": {
+  "tailored_profile": {{
     "headline": "Targeted headline matching role",
     "summary": "2-3 sentence targeted executive summary"
-  },
+  }},
   "tailored_experiences": [
-    {
+    {{
       "company": "...",
       "role": "...",
       "location": "...",
@@ -75,10 +111,10 @@ Required schema:
       "is_current": false,
       "bullet_points": ["Adapted bullet point 1", "Adapted bullet point 2"],
       "technologies": ["Python", "Docker"]
-    }
+    }}
   ],
   "tailored_projects": [
-    {
+    {{
       "title": "...",
       "subtitle": "...",
       "role": "...",
@@ -88,18 +124,22 @@ Required schema:
       "end_date": "...",
       "bullet_points": ["Project bullet point"],
       "technologies": ["..."]
-    }
+    }}
   ],
   "tailored_skills": [
-    {
+    {{
       "category": "Languages",
       "name": "Python",
       "proficiency": "expert"
-    }
+    }}
   ],
-  "cover_letter_body": "Paragraph 1...\n\nParagraph 2...\n\nParagraph 3..."
-}
+  "cover_letter_body": "Paragraph 1...\\n\\nParagraph 2...\\n\\nParagraph 3..."
+}}
 """
+
+REVIEW_SYSTEM_PROMPT = build_review_system_prompt()
+TAILOR_SYSTEM_PROMPT = build_tailor_system_prompt()
+
 
 class TailorService:
     @classmethod
@@ -302,12 +342,16 @@ class TailorService:
     @staticmethod
     def sanitize_latex_bullet(text: str) -> str:
         """Ensures special LaTeX characters are properly escaped in LLM-reviewed bullet text."""
-        cleaned = str(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ").strip()
+        cleaned = normalize_unicode_and_latex_text(text)
+        cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ").strip()
         cleaned = re.sub(r"(?<!\\)%", r"\%", cleaned)
         cleaned = re.sub(r"(?<!\\)&", r"\&", cleaned)
         cleaned = re.sub(r"(?<!\\)_", r"\_", cleaned)
-        cleaned = re.sub(r"(?<!\\)\$", r"\$", cleaned)
         cleaned = re.sub(r"(?<!\\)#", r"\#", cleaned)
+        cleaned = re.sub(r"(?<!\\)\$", r"\$", cleaned)
+        # Escape raw comparison operators for OT1 compatibility (> -> $>$ and < -> $<$)
+        cleaned = re.sub(r"(?<![\$\\])>", r"$>$", cleaned)
+        cleaned = re.sub(r"(?<![\$\\])<", r"$<$", cleaned)
         return cleaned
 
     @classmethod
@@ -317,6 +361,7 @@ class TailorService:
         model_name: str,
         section_title: str,
         bullets: List[str],
+        exp_metrics: Optional[Dict[str, Any]] = None,
     ) -> List[str]:
         """Reviews and polishes bullet points for a single section using small Ollama models."""
         deduped = cls.deduplicate_bullet_points(bullets)
@@ -329,8 +374,9 @@ class TailorService:
             f"Candidate bullet points:\n{bullets_text}\n\n"
             f"Review this section according to instructions and return JSON."
         )
+        system_prompt = build_review_system_prompt(exp_metrics) if exp_metrics else REVIEW_SYSTEM_PROMPT
         messages = [
-            {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         try:
@@ -376,6 +422,8 @@ class TailorService:
         else:
             ollama = OllamaService(base_url=base_url, api_key=api_key, provider=provider or "ollama")
 
+        exp_metrics = calculate_experience_metrics_from_latex(latex_source)
+
         pattern = re.compile(
             r"(\\resumeItemListStart\s*)(.*?)(\s*\\resumeItemListEnd)",
             flags=re.DOTALL
@@ -404,12 +452,14 @@ class TailorService:
                 model_name=selected_model,
                 section_title=context_title,
                 bullets=items,
+                exp_metrics=exp_metrics,
             )
 
             new_items_str = "\n".join(f"  \\resumeItem{{{b}}}" for b in reviewed_bullets)
             return f"{prefix}{new_items_str}{suffix}"
 
-        return pattern.sub(replacer, latex_source)
+        reviewed_doc = pattern.sub(replacer, latex_source)
+        return normalize_unicode_and_latex_text(reviewed_doc, expected_years=exp_metrics.get("display_years"))
 
 
     @classmethod
@@ -447,8 +497,11 @@ class TailorService:
                 f"{custom_instructions[:2000]}"
             )
 
+        exp_metrics = calculate_experience_metrics(master_data["experiences"])
+        dynamic_tailor_prompt = build_tailor_system_prompt(exp_metrics)
+
         messages = [
-            {"role": "system", "content": TAILOR_SYSTEM_PROMPT},
+            {"role": "system", "content": dynamic_tailor_prompt},
             {"role": "user", "content": user_prompt}
         ]
 
@@ -613,12 +666,18 @@ class TailorService:
         except Exception as exc:
             logger.warning(f"Final LaTeX section review skipped due to error: {exc}")
 
+        resume_latex = normalize_unicode_and_latex_text(
+            resume_latex,
+            expected_years=exp_metrics.get("display_years")
+        )
+
         cover_letter_latex = LatexGenerator.generate_cover_letter(
             profile=tailored_profile,
             company_name=application.company_name,
             job_title=application.job_title,
             letter_body=tailored.get("cover_letter_body", "I am writing to express my strong interest in this position...")
         )
+        cover_letter_latex = normalize_unicode_and_latex_text(cover_letter_latex)
 
         with transaction.atomic():
             application.save(update_fields=["match_score", "extracted_keywords", "updated_at"])

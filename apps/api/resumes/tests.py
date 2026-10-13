@@ -1015,3 +1015,337 @@ class MultiProviderAIServiceTests(TestCase):
         self.assertIn("anthropic/claude-3.5-sonnet", data["models"])
 
 
+class LatexUnicodeAndSemanticSanitizationTests(TestCase):
+    def test_unicode_hyphen_and_space_normalization(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "high\u2011throughput and low\u2011latency systems with sub\u201160\u202fms latency."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertEqual(cleaned, "high-throughput and low-latency systems with sub-60 ms latency.")
+
+    def test_semantic_inverted_latency_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "cutting a multi-day manual process to minutes, boosting overall system latency."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("reducing overall pipeline latency", cleaned)
+        self.assertNotIn("boosting", cleaned)
+
+    def test_semantic_mttd_microsecond_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "lowered mean-time-to-detect to sub-60 µs for production anomalies."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("mean-time-to-detect to sub-60s", cleaned)
+        self.assertNotIn("µs", cleaned)
+
+    def test_semantic_trading_latency_direction_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "achieving sub-80 ms p99 order-to-signal latency across Alpaca and Saxo Bank APIs."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("signal-to-order latency", cleaned)
+        self.assertNotIn("order-to-signal", cleaned)
+
+    def test_misattributed_cdk_under_gcp_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "Cloud Platforms: AWS (EKS, Lambda, CloudWatch), GCP (GKE, CDK)"
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("AWS (EKS, Lambda, CloudWatch, CDK)", cleaned)
+        self.assertIn("GCP (GKE)", cleaned)
+        self.assertNotIn("GCP (GKE, CDK)", cleaned)
+
+    def test_escape_latex_comparison_operators(self):
+        from resumes.services.latex_templates import escape_latex
+
+        raw = "Scaled throughput from 20 to >1,000 ops/min with <50ms p99 latency & 80% cost savings."
+        escaped = escape_latex(raw)
+        self.assertIn(r"$>$1,000 ops/min", escaped)
+        self.assertIn(r"$<$50ms", escaped)
+        self.assertIn(r"80\%", escaped)
+        self.assertIn(r"\&", escaped)
+
+    def test_resumeforge_cls_contains_ifpdftex_unicode_mappings(self):
+        from resumes.services.latex_templates import RESUMEFORGE_CLASS
+
+        self.assertIn(r"\ifPDFTeX", RESUMEFORGE_CLASS)
+        self.assertIn(r"\DeclareUnicodeCharacter{2011}{-}", RESUMEFORGE_CLASS)
+        self.assertIn(r"\DeclareUnicodeCharacter{202F}{\,}", RESUMEFORGE_CLASS)
+        self.assertIn(r"\RequirePackage{textcomp}", RESUMEFORGE_CLASS)
+
+    def test_compiler_does_not_drop_hyphens_with_unicode_source(self):
+        from resumes.services.latex_compiler import LatexCompiler
+        import pypdf, io
+
+        source = (
+            r"\documentclass{resumeforge}" "\n"
+            r"\begin{document}" "\n"
+            r"\section{Experience}" "\n"
+            r"\resumeSubHeadingListStart" "\n"
+            r"\resumeSubheading{Software Developer}{2026 -- Present}{Vretta}{Toronto, ON}" "\n"
+            r"\resumeItemListStart" "\n"
+            r"  \resumeItem{Testing high" + "\u2011" + r"throughput and low" + "\u2011" + r"latency systems with $>$1,000 ops/min.}" "\n"
+            r"\resumeItemListEnd" "\n"
+            r"\resumeSubHeadingListEnd" "\n"
+            r"\end{document}"
+        )
+        pdf = LatexCompiler.compile_pdf(source)
+        reader = pypdf.PdfReader(io.BytesIO(pdf))
+        extracted = reader.pages[0].extract_text()
+        self.assertIn("high-throughput", extracted)
+        self.assertIn("low-latency", extracted)
+        self.assertNotIn("highthroughput", extracted)
+        self.assertNotIn("lowlatency", extracted)
+
+    def test_experience_duration_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "Seasoned software engineer with 2+ years designing and scaling distributed systems."
+        # When expected_years is 4, it corrects undersold duration
+        cleaned = normalize_unicode_and_latex_text(raw, expected_years=4)
+        self.assertIn("4+ years designing and scaling", cleaned)
+        self.assertNotIn("2+ years", cleaned)
+
+        # When expected_years is None and no document dates exist, NEVER hardcode or alter
+        raw_exp = "Software engineer with 2.5+ years of experience building APIs."
+        cleaned_exp = normalize_unicode_and_latex_text(raw_exp, expected_years=None)
+        self.assertEqual(cleaned_exp, raw_exp)
+
+        # Inside a complete document, dates are dynamically extracted from Experience section
+        doc_tex = (
+            r"\documentclass{resumeforge}\begin{document}" "\n"
+            r"\section{Professional Summary}" "\n"
+            r"\small{Engineer with 2+ years designing and scaling services.}" "\n"
+            r"\section{Experience}" "\n"
+            r"\resumeSubHeadingListStart" "\n"
+            r"\resumeSubheading{Software Engineer}{Jun 2022 -- Present}{Vretta}{Toronto}" "\n"
+            r"\resumeSubHeadingListEnd" "\n"
+            r"\end{document}"
+        )
+        cleaned_doc = normalize_unicode_and_latex_text(doc_tex)
+        self.assertIn("4+ years designing and scaling", cleaned_doc)
+
+    def test_math_io_delimiter_removal(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "Scaled throughput by integrating async $I/O$, PostgreSQL query tuning."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("integrating asynchronous I/O, PostgreSQL", cleaned)
+        self.assertNotIn("$I/O$", cleaned)
+        self.assertNotIn("$", cleaned)
+
+        raw_escaped = r"Used async \$I/O\$ and standard \$I/O\$ operations."
+        cleaned_escaped = normalize_unicode_and_latex_text(raw_escaped)
+        self.assertIn("asynchronous I/O", cleaned_escaped)
+        self.assertIn("standard I/O operations", cleaned_escaped)
+
+    def test_al_glyph_correction(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "Building high-throughput fintech and Al-ready services with Al infrastructure."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertIn("AI-ready services", cleaned)
+        self.assertIn("AI infrastructure", cleaned)
+        self.assertNotIn("Al-ready", cleaned)
+
+        raw2 = "Expertise in fintech and Al."
+        cleaned2 = normalize_unicode_and_latex_text(raw2)
+        self.assertIn("fintech and AI", cleaned2)
+
+    def test_skills_block_consolidates_to_five_lines(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw_doc = r"""\documentclass{resumeforge}
+\begin{document}
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{
+\textbf{Programming Languages}{: Python, C++, Go} \\ 
+\textbf{Cloud-Native \& Containerization}{: Docker, Kubernetes (EKS/GKE)} \\ 
+\textbf{Infrastructure as Code}{: Terraform, AWS CDK} \\ 
+\textbf{CI/CD}{: GitLab CI/CD, GitHub Actions} \\ 
+\textbf{Observability}{: Prometheus, Grafana, Loki, Tempo, Sentry} \\ 
+\textbf{Databases \& Caching}{: PostgreSQL, Redis. Redis Pub/Sub} \\ 
+\textbf{Frameworks \& Libraries}{: Django (WSGI/ASGI), FastAPI, Celery, React, Next.js, Svelte, TypeScript} \\ 
+\textbf{Tools \& Version Control}{: Git} \\ 
+\textbf{Testing}{: Pytest} \\ 
+\textbf{APIs \& Messaging}{: RESTful APIs, WebSockets, Ingestion Pipelines} \\ 
+\textbf{DevOps \& Cloud}{: Docker, Kubernetes (EKS/GKE), Terraform, GitLab CI/CD, GitHub Actions, AWS CDK, Nginx}
+}}
+\end{itemize}
+\end{document}"""
+
+        cleaned = normalize_unicode_and_latex_text(raw_doc)
+        # Should now have exactly the 5 canonical headers
+        self.assertIn(r"\textbf{Programming Languages}", cleaned)
+        self.assertIn(r"\textbf{Frameworks \& Backend}", cleaned)
+        self.assertIn(r"\textbf{Cloud \& DevOps}", cleaned)
+        self.assertIn(r"\textbf{Databases \& Caching}", cleaned)
+        self.assertIn(r"\textbf{Observability \& Tools}", cleaned)
+
+        # Should not have duplicate single-item lines or duplicate DevOps block
+        self.assertNotIn(r"\textbf{Tools \& Version Control}", cleaned)
+        self.assertNotIn(r"\textbf{Testing}", cleaned)
+        self.assertNotIn(r"\textbf{DevOps \& Cloud}", cleaned)
+        self.assertNotIn(r"\textbf{Cloud-Native \& Containerization}", cleaned)
+
+        # Typo fixed
+        self.assertIn("PostgreSQL, Redis, Redis Pub/Sub", cleaned)
+        self.assertNotIn("Redis. Redis", cleaned)
+
+        # Count occurrences of Docker and Terraform: should appear only once
+        self.assertEqual(cleaned.count("Docker"), 1)
+        self.assertEqual(cleaned.count("Terraform"), 1)
+
+    def test_math_delimiters_in_prose_cleaned(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw1 = r"cutting build times from 3 min to $<40$ s."
+        self.assertEqual(normalize_unicode_and_latex_text(raw1), "cutting build times from 3 min to sub-40s.")
+
+        raw2 = r"GitHub Actions $CI/CD$ to GKE clusters."
+        self.assertEqual(normalize_unicode_and_latex_text(raw2), "GitHub Actions CI/CD to GKE clusters.")
+
+        raw3 = r"through asynchronous $1/O$ and PostgreSQL query tuning."
+        self.assertEqual(normalize_unicode_and_latex_text(raw3), "through asynchronous I/O and PostgreSQL query tuning.")
+
+    def test_al_glyph_in_platforms_and_deployment(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "services for Al platforms while simplifying Al deployment with modern Al-ready tools."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertEqual(cleaned, "services for AI platforms while simplifying AI deployment with modern AI-ready tools.")
+
+    def test_typos_asyne_and_fastapi(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = "Added Redis caching and asyne task batching with Fast API backend."
+        cleaned = normalize_unicode_and_latex_text(raw)
+        self.assertEqual(cleaned, "Added Redis caching and async task batching with FastAPI backend.")
+
+    def test_project_headings_right_align_links(self):
+        from resumes.services.latex_templates import normalize_unicode_and_latex_text
+
+        raw = (
+            r"\resumeProjectHeading{\textbf{Alpaca Main} \enspace\textbar\enspace "
+            r"\emph{Django and Celery-based real-time trading toolkit} \enspace\textbar\enspace "
+            r"\emph{Django, Celery, Docker, Kubernetes, Prometheus, Grafana} \enspace\textbar\enspace "
+            r"\href{https://github.com/naveedkhan1998/alpaca-main}{Code} / \href{https://alpaca.mnaveedk.com}{Live}}{}"
+        )
+        cleaned = normalize_unicode_and_latex_text(raw)
+        expected = (
+            r"\resumeProjectHeading{\textbf{Alpaca Main} \enspace\textbar\enspace "
+            r"\emph{Django, Celery, Docker, Kubernetes, Prometheus, Grafana}}"
+            r"{\href{https://github.com/naveedkhan1998/alpaca-main}{Code} / \href{https://alpaca.mnaveedk.com}{Live}}"
+        )
+        self.assertEqual(cleaned, expected)
+
+    def test_cloud_devops_line_streamlining(self):
+        from resumes.services.latex_templates import streamline_cloud_devops_items
+
+        items = ["Docker", "Kubernetes", "AWS", "GCP", "Terraform", "GitLab CI/CD", "GitHub Actions", "AWS CDK", "Nginx", "Kubernetes (EKS/GKE)"]
+        streamlined = streamline_cloud_devops_items(items)
+        self.assertEqual(
+            streamlined,
+            ["Docker", "Kubernetes (EKS, GKE)", "Terraform", "AWS CDK", "GitLab CI/CD", "GitHub Actions", "Nginx"],
+        )
+
+    def test_education_subheadings_cleaning(self):
+        from resumes.services.latex_templates import clean_education_subheadings
+
+        raw = (
+            r"\section{Education}" "\n"
+            r"\resumeSubHeadingListStart" "\n"
+            r"\resumeSubheading{Western University | 2023 2024}{}{Master of Engineering in Software Engineering}{|}" "\n"
+            r"\resumeSubHeadingListEnd"
+        )
+        cleaned = clean_education_subheadings(raw)
+        self.assertIn(r"\resumeSubheading{Western University}{2023 -- 2024}{Master of Engineering in Software Engineering}{}", cleaned)
+        self.assertNotIn("|", cleaned)
+
+    def test_calculate_experience_metrics_for_multi_role_career(self):
+        from resumes.services.experience_calculator import calculate_experience_metrics
+
+        exps = [
+            {"company": "Vretta", "start_date": "Jan 2026", "end_date": "", "is_current": True},
+            {"company": "Cypienta", "start_date": "Jan 2025", "end_date": "Jun 2025", "is_current": False},
+            {"company": "RiskTec", "start_date": "Apr 2024", "end_date": "Dec 2024", "is_current": False},
+            {"company": "GenioBITS", "start_date": "Jun 2022", "end_date": "Mar 2023", "is_current": False},
+        ]
+        metrics = calculate_experience_metrics(exps)
+        self.assertEqual(metrics["display_years"], 4)
+        self.assertEqual(metrics["display_str"], "4+ years")
+        self.assertIn("Jun 2022 to Present", metrics["date_range_str"])
+
+    def test_calculate_experience_metrics_junior_and_senior(self):
+        from resumes.services.experience_calculator import calculate_experience_metrics
+
+        # Junior developer (1 year)
+        junior = [{"company": "Co A", "start_date": "Jan 2025", "end_date": "", "is_current": True}]
+        j_metrics = calculate_experience_metrics(junior)
+        self.assertEqual(j_metrics["display_years"], 1)
+        self.assertEqual(j_metrics["display_str"], "1+ year")
+
+        # Senior developer (8 years)
+        senior = [{"company": "Co B", "start_date": "May 2018", "end_date": "Present", "is_current": True}]
+        s_metrics = calculate_experience_metrics(senior)
+        self.assertEqual(s_metrics["display_years"], 8)
+        self.assertEqual(s_metrics["display_str"], "8+ years")
+
+        # Empty experiences
+        empty_metrics = calculate_experience_metrics([])
+        self.assertEqual(empty_metrics["display_years"], 0)
+        self.assertEqual(empty_metrics["display_str"], "early-career")
+
+    def test_calculate_experience_metrics_ignores_education_dates(self):
+        from resumes.services.experience_calculator import calculate_experience_metrics_from_latex
+
+        latex_doc = r"""\documentclass{resumeforge}
+\begin{document}
+\section{Experience}
+\resumeSubHeadingListStart
+\resumeSubheading{Software Developer}{Jan 2026 -- Present}{Vretta}{Toronto, ON}
+\resumeSubheading{Backend Engineer}{Jun 2022 -- Mar 2023}{GenioBITS}{Remote}
+\resumeSubHeadingListEnd
+\section{Education}
+\resumeSubHeadingListStart
+\resumeSubheading{University of Waterloo}{2017 -- 2021}{Bachelor of Science}{}
+\resumeSubHeadingListEnd
+\end{document}"""
+
+        metrics = calculate_experience_metrics_from_latex(latex_doc)
+        # Should be 4 years based on June 2022 to Present, NOT 9 years based on 2017 education!
+        self.assertEqual(metrics["display_years"], 4)
+        self.assertEqual(metrics["display_str"], "4+ years")
+
+    def test_normalize_experience_duration_no_hardcoding(self):
+        from resumes.services.experience_calculator import normalize_experience_duration_text
+
+        text = "Software engineer with 2+ years designing distributed systems."
+
+        # If expected_years is None, DO NOT alter
+        self.assertEqual(normalize_experience_duration_text(text, None), text)
+
+        # If expected_years is 2, DO NOT alter (matches)
+        self.assertEqual(normalize_experience_duration_text(text, 2), text)
+
+        # If expected_years is 6, alter 2+ to 6+
+        self.assertIn("6+ years designing", normalize_experience_duration_text(text, 6))
+
+    def test_dynamic_prompt_builder_injects_calculated_tenure(self):
+        from resumes.services.tailor_service import build_tailor_system_prompt, build_review_system_prompt
+
+        metrics_4y = {"display_years": 4, "display_str": "4+ years", "date_range_str": "Jun 2022 to Present"}
+        tailor_prompt_4y = build_tailor_system_prompt(metrics_4y)
+        self.assertIn("Candidate has 4+ years of professional engineering experience (Jun 2022 to Present)", tailor_prompt_4y)
+        self.assertNotIn("across GenioBITS", tailor_prompt_4y)
+
+        metrics_8y = {"display_years": 8, "display_str": "8+ years", "date_range_str": "May 2018 to Present"}
+        review_prompt_8y = build_review_system_prompt(metrics_8y)
+        self.assertIn("Candidate has 8+ years of professional engineering experience (May 2018 to Present)", review_prompt_8y)
+
+
+
+
+
