@@ -1217,7 +1217,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 />
                 <span>
                   Also reset AI settings
-                  <span className="block text-[11px] text-slate-500">Restores the default Ollama endpoint, model, and custom instructions.</span>
+                  <span className="block text-[11px] text-slate-500">Restores default AI provider, endpoint, model, and custom instructions.</span>
                 </span>
               </label>
             </div>

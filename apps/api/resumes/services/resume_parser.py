@@ -295,9 +295,15 @@ class ResumeParser:
         return cleaned
 
     @classmethod
-    def parse_with_ai(cls, raw_text: str, model_name: str = "qwen3.5:9b", base_url: Optional[str] = None) -> Dict[str, Any]:
-        """Use Ollama to extract structured data from raw resume text."""
-        ollama = OllamaService(base_url=base_url)
+    def parse_with_ai(
+        cls,
+        raw_text: str,
+        model_name: str = "qwen3.5:9b",
+        base_url: Optional[str] = None,
+        ollama_service: Optional[OllamaService] = None,
+    ) -> Dict[str, Any]:
+        """Use LLM (Ollama or OpenRouter) to extract structured data from raw resume text."""
+        ollama = ollama_service or OllamaService(base_url=base_url)
         messages = [
             {"role": "system", "content": PARSE_SYSTEM_PROMPT},
             {"role": "user", "content": f"Parse the following resume into JSON:\n\n{raw_text[:20000]}"}

@@ -86,9 +86,12 @@ export interface Project {
 }
 
 export interface AISettings {
+  provider?: 'ollama' | 'openrouter';
   ollama_endpoint: string;
+  openrouter_endpoint?: string;
+  api_key?: string;
   model_name: string;
-  embedding_model: string;
+  embedding_model?: string;
   temperature: number;
   custom_instructions?: string;
 }

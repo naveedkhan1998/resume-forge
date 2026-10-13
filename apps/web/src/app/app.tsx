@@ -19,12 +19,22 @@ export function App() {
   const loadData = async () => {
     setLoadError(null);
     try {
-      const [ctx, health, settings] = await Promise.all([
+      const [ctx, settings] = await Promise.all([
         api.getMasterContext(),
-        api.getAiHealth().catch(() => ({ connected: false })),
         api.getAiSettings().catch(() => null),
       ]);
       setContext(ctx);
+
+      const endpoint = settings?.provider === 'openrouter'
+        ? settings?.openrouter_endpoint
+        : settings?.ollama_endpoint;
+
+      const health = await api.getAiHealth(settings ? {
+        provider: settings.provider,
+        endpoint,
+        api_key: settings.api_key,
+      } : undefined).catch(() => ({ connected: false }));
+
       setAiConnected(Boolean(health?.connected));
       if (settings?.model_name) {
         setActiveModel(settings.model_name);
@@ -45,7 +55,14 @@ export function App() {
 
   const handleSettingsSaved = (newSettings: AISettings) => {
     setActiveModel(newSettings.model_name);
-    api.getAiHealth(newSettings.ollama_endpoint).then((res) => {
+    const endpoint = newSettings.provider === 'openrouter'
+      ? newSettings.openrouter_endpoint
+      : newSettings.ollama_endpoint;
+    api.getAiHealth({
+      provider: newSettings.provider,
+      endpoint,
+      api_key: newSettings.api_key,
+    }).then((res) => {
       setAiConnected(Boolean(res?.connected));
     });
   };
@@ -110,7 +127,7 @@ export function App() {
       <footer className="border-t border-slate-200/80 bg-white py-6 mt-12 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p>ResumeForge · Your career data stays on your machine</p>
-          <p className="text-slate-400">Local-first resume optimization with Ollama</p>
+          <p className="text-slate-400">Private resume optimization with Ollama & OpenRouter</p>
         </div>
       </footer>
     </div>

@@ -30,10 +30,20 @@ async function handleResponse<T = any>(res: Response): Promise<T> {
 
 export const api = {
   // AI Health & Settings
-  async getAiHealth(endpoint?: string) {
-    const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : '';
+  async getAiHealth(options?: string | { provider?: string; endpoint?: string; api_key?: string }) {
+    let query = '';
+    if (typeof options === 'string') {
+      query = options ? `?endpoint=${encodeURIComponent(options)}` : '';
+    } else if (options && typeof options === 'object') {
+      const params = new URLSearchParams();
+      if (options.provider) params.append('provider', options.provider);
+      if (options.endpoint) params.append('endpoint', options.endpoint);
+      if (options.api_key) params.append('api_key', options.api_key);
+      const str = params.toString();
+      if (str) query = `?${str}`;
+    }
     const res = await fetch(`${API_BASE}/ai/health${query}`);
-    return handleResponse(res);
+    return handleResponse<{ connected: boolean; models?: string[]; error?: string }>(res);
   },
 
   async getAiSettings(): Promise<AISettings> {

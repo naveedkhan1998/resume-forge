@@ -362,13 +362,19 @@ class TailorService:
         latex_source: str,
         model_name: Optional[str] = None,
         base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        provider: Optional[str] = None,
+        ollama_service: Optional[OllamaService] = None,
     ) -> str:
         """Reviews final LaTeX resume document section-by-section to eliminate duplicates and polish phrasing."""
         if not latex_source or "\\resumeItemListStart" not in latex_source:
             return latex_source
 
         selected_model = model_name or "qwen3.5:9b"
-        ollama = OllamaService(base_url=base_url)
+        if ollama_service:
+            ollama = ollama_service
+        else:
+            ollama = OllamaService(base_url=base_url, api_key=api_key, provider=provider or "ollama")
 
         pattern = re.compile(
             r"(\\resumeItemListStart\s*)(.*?)(\s*\\resumeItemListEnd)",
@@ -416,11 +422,13 @@ class TailorService:
     ) -> Dict[str, Any]:
         """Tailor resume and cover letter for a specific job application."""
         ai_settings = getattr(user, 'ai_settings', None)
-        endpoint = base_url or (ai_settings.ollama_endpoint if ai_settings else None)
         selected_model = model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
 
         master_data = cls.get_user_master_data(user)
-        ollama = OllamaService(base_url=endpoint)
+        if base_url:
+            ollama = OllamaService(base_url=base_url)
+        else:
+            ollama = OllamaService.from_user(user)
 
         if not application.raw_description.strip():
             raise ValueError("Add a job description before tailoring this application.")
@@ -600,7 +608,7 @@ class TailorService:
             resume_latex = cls.review_latex_document(
                 latex_source=resume_latex,
                 model_name=selected_model,
-                base_url=endpoint,
+                ollama_service=ollama,
             )
         except Exception as exc:
             logger.warning(f"Final LaTeX section review skipped due to error: {exc}")

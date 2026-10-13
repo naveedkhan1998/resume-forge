@@ -902,3 +902,116 @@ class SectionReviewAndDeduplicationTests(TestCase):
         self.assertEqual(data["status"], "success")
         self.assertIn(r"\resumeItem{Ad-hoc reviewed bullet}", data["latex_source"])
 
+
+class MultiProviderAIServiceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="provider_user", email="prov@test.com", password="pwd")
+
+    def test_remote_ollama_includes_auth_header(self):
+        service = OllamaService(
+            base_url="https://remote-ollama.example.com",
+            api_key="secret-ollama-token",
+            provider="ollama",
+        )
+        headers = service._get_headers()
+        self.assertEqual(headers["Authorization"], "Bearer secret-ollama-token")
+        self.assertEqual(headers["Content-Type"], "application/json")
+
+    def test_openrouter_headers_include_referer_and_title(self):
+        service = OllamaService(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-or-test-key",
+            provider="openrouter",
+        )
+        headers = service._get_headers()
+        self.assertEqual(headers["Authorization"], "Bearer sk-or-test-key")
+        self.assertEqual(headers["HTTP-Referer"], "https://resumeforge.dev")
+        self.assertEqual(headers["X-Title"], "ResumeForge")
+
+    @patch("httpx.Client.get")
+    def test_openrouter_health_check_success(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "data": [
+                {"id": "meta-llama/llama-3.3-70b-instruct"},
+                {"id": "qwen/qwen-2.5-72b-instruct"},
+            ]
+        }
+        service = OllamaService(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-or-test-key",
+            provider="openrouter",
+        )
+        res = service.check_health_sync()
+        self.assertTrue(res["connected"])
+        self.assertEqual(res["provider"], "openrouter")
+        self.assertIn("meta-llama/llama-3.3-70b-instruct", res["models"])
+
+    @patch("httpx.Client.post")
+    def test_openrouter_chat_sync_success(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": '{"score": 90}',
+                    }
+                }
+            ]
+        }
+        service = OllamaService(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="sk-or-test-key",
+            provider="openrouter",
+        )
+        msg = service.chat_sync(
+            model="meta-llama/llama-3.3-70b-instruct",
+            messages=[{"role": "user", "content": "hi"}],
+            format_json=True,
+        )
+        self.assertEqual(msg["content"], '{"score": 90}')
+        # Verify request payload
+        called_kwargs = mock_post.call_args[1]
+        self.assertEqual(called_kwargs["json"]["response_format"], {"type": "json_object"})
+        self.assertEqual(called_kwargs["headers"]["Authorization"], "Bearer sk-or-test-key")
+
+    def test_update_and_get_ai_settings_endpoint(self):
+        self.client.force_login(self.user)
+        payload = {
+            "provider": "openrouter",
+            "openrouter_endpoint": "https://openrouter.ai/api/v1",
+            "api_key": "sk-or-test-key-123",
+            "model_name": "meta-llama/llama-3.3-70b-instruct",
+            "embedding_model": "nomic-embed-text",
+            "temperature": 0.25,
+            "custom_instructions": "Focus on high-scale systems.",
+        }
+        resp = self.client.post("/api/ai/settings", data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+
+        get_resp = self.client.get("/api/ai/settings")
+        self.assertEqual(get_resp.status_code, 200)
+        data = get_resp.json()
+        self.assertEqual(data["provider"], "openrouter")
+        self.assertEqual(data["openrouter_endpoint"], "https://openrouter.ai/api/v1")
+        self.assertEqual(data["api_key"], "sk-or-test-key-123")
+        self.assertEqual(data["model_name"], "meta-llama/llama-3.3-70b-instruct")
+
+    @patch("httpx.Client.get")
+    def test_ai_health_endpoint_with_openrouter_query_params(self, mock_get):
+        self.client.force_login(self.user)
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "data": [{"id": "anthropic/claude-3.5-sonnet"}]
+        }
+        resp = self.client.get(
+            "/api/ai/health?provider=openrouter&endpoint=https://openrouter.ai/api/v1&api_key=sk-or-abc"
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["connected"])
+        self.assertEqual(data["provider"], "openrouter")
+        self.assertIn("anthropic/claude-3.5-sonnet", data["models"])
+
+

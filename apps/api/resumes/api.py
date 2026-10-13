@@ -132,9 +132,12 @@ class ProjectSchema(Schema):
     order: Optional[int] = 0
 
 class AISettingsSchema(Schema):
-    ollama_endpoint: str
+    provider: Optional[str] = "ollama"
+    ollama_endpoint: Optional[str] = "http://localhost:11434"
+    openrouter_endpoint: Optional[str] = "https://openrouter.ai/api/v1"
+    api_key: Optional[str] = ""
     model_name: str
-    embedding_model: str
+    embedding_model: Optional[str] = "nomic-embed-text"
     temperature: float
     custom_instructions: Optional[str] = ""
 
@@ -222,9 +225,27 @@ def me(request: HttpRequest):
 # AI Configuration & Health
 # -------------------------------------------------------------
 @api.get("/ai/health")
-def ai_health(request: HttpRequest, endpoint: Optional[str] = None):
-    ollama = OllamaService(base_url=endpoint)
-    return ollama.check_health_sync()
+def ai_health(
+    request: HttpRequest,
+    provider: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
+    user = get_current_user(request)
+    ai_settings = getattr(user, 'ai_settings', None)
+    active_provider = (provider or (ai_settings.provider if ai_settings else "ollama")).lower().strip()
+    key = api_key if api_key is not None else (ai_settings.api_key if ai_settings else "")
+    if active_provider == "openrouter":
+        url = endpoint or (ai_settings.openrouter_endpoint if ai_settings else "https://openrouter.ai/api/v1")
+    else:
+        url = endpoint or (ai_settings.ollama_endpoint if ai_settings else "http://localhost:11434")
+
+    service = OllamaService(
+        base_url=url,
+        api_key=key,
+        provider=active_provider,
+    )
+    return service.check_health_sync()
 
 @api.get("/ai/settings", response=AISettingsSchema)
 def get_ai_settings(request: HttpRequest):
@@ -234,17 +255,30 @@ def get_ai_settings(request: HttpRequest):
 
 @api.post("/ai/settings")
 def update_ai_settings(request: HttpRequest, data: AISettingsSchema):
-    if not data.ollama_endpoint.startswith(("http://", "https://")):
+    provider = (data.provider or "ollama").lower().strip()
+    if provider not in {"ollama", "openrouter"}:
+        return api.create_response(request, {"error": "Provider must be 'ollama' or 'openrouter'."}, status=400)
+    if provider == "ollama" and data.ollama_endpoint and not data.ollama_endpoint.startswith(("http://", "https://")):
         return api.create_response(request, {"error": "Ollama endpoint must use http:// or https://."}, status=400)
+    if provider == "openrouter" and data.openrouter_endpoint and not data.openrouter_endpoint.startswith(("http://", "https://")):
+        return api.create_response(request, {"error": "OpenRouter endpoint must use http:// or https://."}, status=400)
     if not data.model_name.strip():
         return api.create_response(request, {"error": "Model name is required."}, status=400)
     if not 0 <= data.temperature <= 1:
         return api.create_response(request, {"error": "Temperature must be between 0 and 1."}, status=400)
+
     user = get_current_user(request)
     settings, _ = UserAISettings.objects.get_or_create(user=user)
-    settings.ollama_endpoint = data.ollama_endpoint
+    settings.provider = provider
+    if data.ollama_endpoint:
+        settings.ollama_endpoint = data.ollama_endpoint
+    if data.openrouter_endpoint:
+        settings.openrouter_endpoint = data.openrouter_endpoint
+    if data.api_key is not None:
+        settings.api_key = data.api_key
     settings.model_name = data.model_name
-    settings.embedding_model = data.embedding_model
+    if data.embedding_model:
+        settings.embedding_model = data.embedding_model
     settings.temperature = data.temperature
     settings.custom_instructions = data.custom_instructions or ""
     settings.save()
@@ -256,8 +290,8 @@ def refine_section(request: HttpRequest, data: RefineSectionSchema):
         return api.create_response(request, {"error": "A refinement instruction is required."}, status=400)
     user = get_current_user(request)
     ai_settings = getattr(user, 'ai_settings', None)
-    endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
+    service = OllamaService.from_user(user)
     try:
         return SectionEditor.refine_section(
             section_type=data.section_type,
@@ -265,7 +299,7 @@ def refine_section(request: HttpRequest, data: RefineSectionSchema):
             instruction=data.instruction,
             conversation=[message.dict() for message in data.conversation],
             model_name=model,
-            base_url=endpoint
+            ollama_service=service,
         )
     except (RuntimeError, ValueError) as exc:
         return api.create_response(request, {"error": str(exc)}, status=502)
@@ -489,11 +523,11 @@ def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
         return api.create_response(request, {"error": "Could not extract any text from the uploaded file."}, status=400)
 
     ai_settings = getattr(user, 'ai_settings', None)
-    endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
+    service = OllamaService.from_user(user)
 
     try:
-        parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, base_url=endpoint)
+        parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, ollama_service=service)
         ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text)
     except (RuntimeError, ValueError) as exc:
         return api.create_response(request, {"error": str(exc)}, status=502)
@@ -680,15 +714,15 @@ def review_document_sections(request: HttpRequest, doc_id: int, data: Optional[R
     user = get_current_user(request)
     doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
     ai_settings = getattr(user, 'ai_settings', None)
-    endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = (data.model_name if data and data.model_name else None) or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
 
     source_to_review = (data.latex_source if data and data.latex_source else None) or doc.latex_source
+    service = OllamaService.from_user(user)
 
     reviewed_latex = TailorService.review_latex_document(
         latex_source=source_to_review,
         model_name=model,
-        base_url=endpoint,
+        ollama_service=service,
     )
 
     doc.latex_source = reviewed_latex
@@ -700,16 +734,16 @@ def review_document_sections(request: HttpRequest, doc_id: int, data: Optional[R
 def review_custom_latex(request: HttpRequest, data: ReviewSectionsSchema):
     user = get_current_user(request)
     ai_settings = getattr(user, 'ai_settings', None)
-    endpoint = ai_settings.ollama_endpoint if ai_settings else None
     model = data.model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
 
     if not data.latex_source:
         return api.create_response(request, {"error": "latex_source is required."}, status=400)
 
+    service = OllamaService.from_user(user)
     reviewed_latex = TailorService.review_latex_document(
         latex_source=data.latex_source,
         model_name=model,
-        base_url=endpoint,
+        ollama_service=service,
     )
     return {"status": "success", "latex_source": reviewed_latex}
 

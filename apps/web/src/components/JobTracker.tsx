@@ -476,9 +476,9 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
                   <div className="flex items-center gap-2 text-sm font-semibold text-indigo-900">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Your local model is comparing evidence with the role
+                    Your AI model is analyzing requirements and tailoring evidence
                   </div>
-                  <p className="mt-1 pl-6 text-xs text-indigo-700">Lightweight models may need a minute. Keep this page open; no career data leaves your Ollama endpoint.</p>
+                  <p className="mt-1 pl-6 text-xs text-indigo-700">Analyzing job description against your master profile. Keep this page open while your model processes.</p>
                 </div>
               )}
 
@@ -766,7 +766,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   </div>
                   <h4 className="text-sm font-semibold text-slate-900">No Tailored Document Yet</h4>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Click <strong>"Tailor with AI"</strong> above. Ollama will compare this job description against your master context, pick the most relevant bullet points, and generate custom LaTeX code.
+                    Click <strong>"Tailor with AI"</strong> above. Your configured AI model will compare this job description against your master context, pick the most relevant bullet points, and generate custom LaTeX code.
                   </p>
                 </div>
               )}

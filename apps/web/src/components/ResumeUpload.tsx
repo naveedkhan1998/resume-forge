@@ -101,7 +101,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
               onClick={handleUpload}
               className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl shadow-sm transition-all"
             >
-              Parse with Ollama ({activeModel})
+              Parse with AI ({activeModel})
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -111,7 +111,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess, act
           <div className="mt-8 p-6 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
             <div className="text-center">
-              <p className="text-sm font-semibold text-slate-800">Processing Resume with Local AI...</p>
+              <p className="text-sm font-semibold text-slate-800">Processing Resume with AI...</p>
               <p className="text-xs text-slate-500 mt-0.5">
                 Extracting plain text, parsing structured JSON schema, and populating master database.
               </p>

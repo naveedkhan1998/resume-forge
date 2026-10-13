@@ -118,7 +118,10 @@ class Certification(models.Model):
 
 class UserAISettings(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='ai_settings')
+    provider = models.CharField(max_length=50, default='ollama')
     ollama_endpoint = models.CharField(max_length=255, default='http://localhost:11434')
+    openrouter_endpoint = models.CharField(max_length=255, default='https://openrouter.ai/api/v1')
+    api_key = models.CharField(max_length=255, blank=True, default='')
     model_name = models.CharField(max_length=100, default='qwen3.5:9b')
     embedding_model = models.CharField(max_length=100, default='nomic-embed-text')
     temperature = models.FloatField(default=0.7)
@@ -126,7 +129,7 @@ class UserAISettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username}'s AI Settings ({self.model_name})"
+        return f"{self.user.username}'s AI Settings ({self.provider}: {self.model_name})"
 
 
 class JobApplication(models.Model):

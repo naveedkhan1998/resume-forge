@@ -18,7 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'master' as const, label: 'Career profile', shortLabel: 'Profile', icon: FileText },
     { id: 'upload' as const, label: 'Import resume', shortLabel: 'Import', icon: UploadCloud },
     { id: 'jobs' as const, label: 'Applications', shortLabel: 'Jobs', icon: Briefcase },
-    { id: 'settings' as const, label: 'Local AI', shortLabel: 'AI', icon: Cpu },
+    { id: 'settings' as const, label: 'AI Settings', shortLabel: 'AI', icon: Cpu },
   ];
 
   return (
@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
           >
             {aiConnected ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : <AlertCircle className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{aiConnected ? activeModel : 'Ollama offline'}</span>
+            <span className="hidden sm:inline">{aiConnected ? activeModel : 'AI offline'}</span>
           </button>
         </div>
 

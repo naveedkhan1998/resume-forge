@@ -70,9 +70,10 @@ class SectionEditor:
         conversation: Optional[List[Dict[str, str]]] = None,
         model_name: str = "qwen3.5:9b",
         base_url: Optional[str] = None,
+        ollama_service: Optional[OllamaService] = None,
     ) -> Dict[str, Any]:
         """Continue a contextual editing conversation and return an unsaved draft."""
-        ollama = OllamaService(base_url=base_url)
+        ollama = ollama_service or OllamaService(base_url=base_url)
         history = [
             {"role": message["role"], "content": str(message["content"])[:2000]}
             for message in (conversation or [])[-8:]
