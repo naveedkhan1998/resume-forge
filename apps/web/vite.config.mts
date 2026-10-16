@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(() => ({
   root: import.meta.dirname,
+  envDir: '../../',
+  envPrefix: ['VITE_', 'GA_', 'G4A_'],
   cacheDir: '../../node_modules/.vite/apps/web',
   server: {
     port: 4200,

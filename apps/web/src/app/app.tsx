@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { MasterProfile } from '../components/MasterProfile';
 import { ResumeUpload } from '../components/ResumeUpload';
@@ -7,12 +7,14 @@ import { JobTracker } from '../components/JobTracker';
 import { Settings } from '../components/Settings';
 import { MasterContext, AISettings } from '../types';
 import { api } from '../services/api';
+import { initGA, trackPageView } from '../services/analytics';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 
 export function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   );
@@ -56,8 +58,13 @@ export function App() {
   };
 
   useEffect(() => {
+    initGA();
     loadData();
   }, []);
+
+  useEffect(() => {
+    trackPageView(location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     const isDark = theme === 'dark';
