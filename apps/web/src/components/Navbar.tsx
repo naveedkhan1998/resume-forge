@@ -56,12 +56,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8">
           <Link
             to="/profile"
-            className="flex shrink-0 items-center gap-2 text-left"
+            className="flex shrink-0 items-center gap-2.5 text-left"
             aria-label="Open profile"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-950 text-xs font-bold text-white dark:bg-white dark:text-slate-950">
-              R
-            </span>
+            <img
+              src="/icon.svg"
+              alt="ResumeForge Logo"
+              className="h-7 w-7 rounded object-contain shadow-xs"
+            />
             <span className="hidden text-sm font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:block">
               ResumeForge
             </span>

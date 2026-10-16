@@ -87,9 +87,12 @@ export function App() {
   if (loading) {
     return (
       <div className="app-shell min-h-screen flex items-center justify-center">
-        <Card className="loading-card flex flex-col items-center gap-4 border border-slate-200/70 bg-white/80 dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="brand-mark flex h-12 w-12 items-center justify-center rounded-2xl">
-            <Loader2 className="w-5 h-5 animate-spin" />
+        <Card className="loading-card flex flex-col items-center gap-4 border border-slate-200/70 bg-white/80 p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="relative flex h-14 w-14 items-center justify-center">
+            <img src="/icon.svg" alt="ResumeForge" className="h-12 w-12 rounded-xl object-contain shadow-xs" />
+            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-xs dark:bg-slate-800">
+              <Loader2 className="h-3 w-3 animate-spin text-slate-600 dark:text-slate-300" />
+            </div>
           </div>
           <div className="text-center">
             <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Opening your workspace</p>
@@ -180,8 +183,11 @@ export function App() {
       </main>
 
       <footer className="app-footer mt-12 hidden border-t border-slate-200/80 py-6 text-center text-xs text-slate-500 md:block">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 sm:flex-row">
-          <p className="font-medium">ResumeForge · Your career data stays on your machine</p>
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 sm:flex-row">
+          <div className="flex items-center gap-2">
+            <img src="/icon.svg" alt="ResumeForge" className="h-4 w-4 rounded-xs object-contain opacity-80" />
+            <p className="font-medium text-slate-600 dark:text-slate-300">ResumeForge · Your career data stays on your machine</p>
+          </div>
           <p className="text-slate-400">Private resume intelligence, built around you</p>
         </div>
       </footer>

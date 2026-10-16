@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141a23" />
+      <stop offset="100%" stop-color="#0d1117" />
+    </linearGradient>
+
+    <!-- Forge Fire / Spark Glow -->
+    <radialGradient id="forgeGlow" cx="50%" cy="48%" r="35%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="25%" stop-color="#ffaa00" stop-opacity="0.9" />
+      <stop offset="60%" stop-color="#ff5500" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#ff3300" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Anvil Metallic Gradients -->
+    <linearGradient id="anvilBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2b445e" />
+      <stop offset="50%" stop-color="#182636" />
+      <stop offset="100%" stop-color="#0d1520" />
+    </linearGradient>
+
+    <linearGradient id="anvilTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3a6085" />
+      <stop offset="50%" stop-color="#65a2d9" />
+      <stop offset="100%" stop-color="#243b52" />
+    </linearGradient>
+
+    <linearGradient id="anvilHorn" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#62a8e5" />
+      <stop offset="45%" stop-color="#244769" />
+      <stop offset="100%" stop-color="#0e1e2e" />
+    </linearGradient>
+
+    <!-- Document Gradient -->
+    <linearGradient id="docGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e6f7ff" />
+      <stop offset="65%" stop-color="#cceeff" />
+      <stop offset="100%" stop-color="#ffd599" />
+    </linearGradient>
+
+    <!-- Neon & Fire Accents -->
+    <linearGradient id="fireGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#ff4500" />
+      <stop offset="50%" stop-color="#ffa500" />
+      <stop offset="100%" stop-color="#ffffaa" />
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    
+    <filter id="heavyGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Ambient Forge Glow -->
+  <circle cx="260" cy="245" r="140" fill="url(#forgeGlow)" />
+
+  <!-- Background Sparks & Binary -->
+  <g fill="#ff8800" opacity="0.85">
+    <!-- Left Sparks -->
+    <path d="M210 240 L135 190 L140 185 Z" fill="url(#fireGrad)" />
+    <path d="M200 248 L120 225 L123 220 Z" fill="url(#fireGrad)" />
+    <path d="M220 230 L170 155 L176 152 Z" fill="url(#fireGrad)" />
+    <circle cx="155" cy="140" r="3.5" fill="#ffaa00" />
+    <circle cx="115" cy="195" r="2.5" fill="#ff5500" />
+    <circle cx="135" cy="245" r="4" fill="#ffaa00" />
+
+    <!-- Right Sparks -->
+    <path d="M310 240 L385 180 L380 174 Z" fill="url(#fireGrad)" />
+    <path d="M320 248 L400 215 L397 209 Z" fill="url(#fireGrad)" />
+    <path d="M300 225 L345 145 L339 142 Z" fill="url(#fireGrad)" />
+    <circle cx="365" cy="135" r="4" fill="#ffaa00" />
+    <circle cx="405" cy="185" r="3" fill="#ff5500" />
+    <circle cx="380" cy="235" r="3.5" fill="#ffaa00" />
+  </g>
+
+  <!-- Binary Code Streams -->
+  <g font-family="monospace" font-size="13" font-weight="bold" fill="#ff9933" opacity="0.7" letter-spacing="2">
+    <text x="115" y="195" transform="rotate(28 115 195)">0110101</text>
+    <text x="100" y="218" transform="rotate(22 100 218)" font-size="10" opacity="0.5">1010101</text>
+    <text x="335" y="195" transform="rotate(-32 335 195)">0010110</text>
+    <text x="325" y="170" transform="rotate(-40 325 170)" font-size="11" opacity="0.6">110010</text>
+  </g>
+
+  <!-- THE RESUME DOCUMENT -->
+  <g id="resume-doc">
+    <!-- Outer Cyan Glow -->
+    <path d="M210 105 H285 L315 135 V248 H210 Z" fill="none" stroke="#00d2ff" stroke-width="6" stroke-linejoin="round" filter="url(#neonGlow)" opacity="0.7" />
+    
+    <!-- Document Base -->
+    <path d="M210 105 H285 L315 135 V248 H210 Z" fill="url(#docGrad)" stroke="#14283c" stroke-width="5" stroke-linejoin="round" />
+    
+    <!-- Folded Corner -->
+    <path d="M285 105 V135 H315 Z" fill="#7dd3fc" stroke="#14283c" stroke-width="5" stroke-linejoin="round" />
+
+    <!-- AI Chip Badge (Top Left of Doc) -->
+    <rect x="224" y="122" width="32" height="32" rx="6" fill="#0d2538" />
+    <rect x="232" y="130" width="16" height="16" rx="2" fill="none" stroke="#00e5ff" stroke-width="2" />
+    <rect x="236" y="134" width="8" height="8" fill="#00e5ff" />
+    <!-- Chip Pins -->
+    <path d="M236 125 V130 M240 125 V130 M244 125 V130
+             M236 146 V151 M240 146 V151 M244 146 V151
+             M227 134 H232 M227 138 H232 M227 142 H232
+             M248 134 H253 M248 138 H253 M248 142 H253" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" />
+
+    <!-- Resume Header Lines -->
+    <line x1="266" y1="128" x2="282" y2="128" stroke="#1e3f5a" stroke-width="5" stroke-linecap="round" />
+    <line x1="266" y1="140" x2="298" y2="140" stroke="#1e3f5a" stroke-width="5" stroke-linecap="round" />
+    <line x1="266" y1="152" x2="290" y2="152" stroke="#1e3f5a" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Resume Body Lines -->
+    <line x1="224" y1="170" x2="298" y2="170" stroke="#254d6e" stroke-width="5" stroke-linecap="round" />
+    <line x1="224" y1="182" x2="298" y2="182" stroke="#254d6e" stroke-width="5" stroke-linecap="round" />
+    <line x1="224" y1="194" x2="280" y2="194" stroke="#254d6e" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Bottom Left Accent Lines -->
+    <line x1="224" y1="212" x2="255" y2="212" stroke="#cc6600" stroke-width="5" stroke-linecap="round" />
+    <line x1="224" y1="224" x2="255" y2="224" stroke="#cc6600" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Bottom Right Gear Icon -->
+    <g transform="translate(282, 214)">
+      <circle cx="0" cy="0" r="10" fill="none" stroke="#993d00" stroke-width="5" />
+      <circle cx="0" cy="0" r="4" fill="#993d00" />
+      <path d="M0 -15 V-11 M0 11 V15 M-15 0 H-11 M11 0 H15
+               M-11 -11 L-8 -8 M8 8 L11 11 M-11 11 L-8 8 M8 -8 L11 -11" stroke="#993d00" stroke-width="4" stroke-linecap="round" />
+    </g>
+  </g>
+
+  <!-- THE CYBER ANVIL -->
+  <g id="cyber-anvil">
+    <!-- Anvil Base Shadow -->
+    <polygon points="150,395 255,435 385,390 295,355" fill="#070a0e" opacity="0.8" />
+
+    <!-- Anvil Horn (Left Cone) -->
+    <path d="M190 265 C140 265, 115 275, 102 280 C115 315, 150 328, 190 328 Z" fill="url(#anvilHorn)" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+    <!-- Horn Highlight -->
+    <path d="M185 273 C148 273, 125 279, 112 283 C130 292, 160 295, 185 292 Z" fill="#8ce0ff" opacity="0.6" />
+
+    <!-- Horn Collar / Step -->
+    <polygon points="182,255 215,245 230,255 230,335 190,335 182,328" fill="#1e344a" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+
+    <!-- Anvil Main Body & Feet -->
+    <path d="M215 258 L398 228 L398 258 C345 278, 330 325, 378 362 L378 388 L345 400 L315 385 L292 395 L292 420 L255 430 L215 412 L215 388 L195 395 L162 380 L162 355 C205 340, 215 305, 215 258 Z" fill="url(#anvilBody)" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+
+    <!-- Anvil Top Faceplate -->
+    <polygon points="180,245 255,265 408,225 335,208" fill="url(#anvilTop)" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+    
+    <!-- Top Faceplate Bevel / Side -->
+    <polygon points="180,245 255,265 255,288 180,265" fill="#2c4c6b" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+    <polygon points="255,265 408,225 408,246 255,288" fill="#1b334a" stroke="#09111a" stroke-width="6" stroke-linejoin="round" />
+
+    <!-- Hardy Hole (Top Right Punch Hole) -->
+    <polygon points="345,222 365,217 378,221 358,226" fill="#09111a" />
+
+    <!-- Anvil Foot Highlights (3D Block Details) -->
+    <polygon points="162,355 195,368 195,395 162,380" fill="#2c5275" stroke="#09111a" stroke-width="5" stroke-linejoin="round" />
+    <polygon points="255,398 292,388 292,420 255,430" fill="#2c5275" stroke="#09111a" stroke-width="5" stroke-linejoin="round" />
+    <polygon points="345,372 378,362 378,388 345,400" fill="#2c5275" stroke="#09111a" stroke-width="5" stroke-linejoin="round" />
+  </g>
+
+  <!-- CIRCUIT BOARD TRACES (ON ANVIL) -->
+  <g id="circuits" filter="url(#neonGlow)">
+    <!-- Central AI Core on Anvil Body -->
+    <polygon points="282,295 312,287 312,320 282,328" fill="#0b1929" stroke="#ff9900" stroke-width="3.5" stroke-linejoin="round" />
+    <polygon points="288,301 306,296 306,314 288,319" fill="#00e5ff" />
+
+    <!-- Cyan Traces -->
+    <g fill="none" stroke="#00e5ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M282 305 L260 310 L250 302" />
+      <path d="M282 316 L265 322 L265 365 L255 378" />
+      <path d="M312 308 L332 302 L342 312" />
+      <path d="M302 323 L302 365 L312 378" />
+      <path d="M312 296 L335 288 L350 265" />
+      <path d="M235 335 L235 360 L220 375" />
+    </g>
+
+    <!-- Cyan Nodes -->
+    <g fill="#0b1929" stroke="#00e5ff" stroke-width="3">
+      <circle cx="250" cy="302" r="4" />
+      <circle cx="255" cy="378" r="4" />
+      <circle cx="342" cy="312" r="4" />
+      <circle cx="312" cy="378" r="4" />
+      <circle cx="350" cy="265" r="4" />
+      <circle cx="220" cy="375" r="4" />
+    </g>
+
+    <!-- Orange / Fire Traces -->
+    <g fill="none" stroke="#ff9900" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M292 292 L292 278" />
+      <path d="M302 289 L302 275" />
+      <path d="M282 322 L252 330" />
+      <path d="M288 326 L288 388" />
+      <path d="M296 325 L296 382" />
+      <path d="M312 290 L330 270 L365 258" />
+      <path d="M222 345 L205 365 L205 385" />
+    </g>
+
+    <!-- Orange Nodes -->
+    <g fill="#0b1929" stroke="#ff9900" stroke-width="3">
+      <circle cx="252" cy="330" r="4" />
+      <circle cx="365" cy="258" r="4" />
+      <circle cx="205" cy="365" r="3.5" />
+    </g>
+  </g>
+
+  <!-- INTENSE FORGE SEAM (Where Resume meets Anvil) -->
+  <g id="forge-core">
+    <ellipse cx="262" cy="246" rx="58" ry="12" fill="#ff6600" filter="url(#heavyGlow)" />
+    <polygon points="195,245 255,260 328,240 265,232" fill="#ffffff" filter="url(#neonGlow)" />
+    
+    <!-- Foreground Upward Sparks -->
+    <path d="M255 252 L225 225 L230 222 Z" fill="#ffffff" />
+    <path d="M275 250 L305 220 L300 216 Z" fill="#ffffff" />
+    <path d="M240 248 L190 215 L195 210 Z" fill="url(#fireGrad)" />
+    <path d="M290 245 L335 210 L330 205 Z" fill="url(#fireGrad)" />
+  </g>
+</svg>
