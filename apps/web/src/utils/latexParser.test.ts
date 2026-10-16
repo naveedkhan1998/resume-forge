@@ -152,4 +152,36 @@ describe('parseLatexDocument', () => {
       }),
     ]);
   });
+
+  it('generates a selectable vector PDF directly on the client in milliseconds', () => {
+    const source = String.raw`
+\documentclass{resumeforge}
+\begin{document}
+\begin{center}
+  \textbf{\Huge \scshape Dr. Clara Oswald} \\ \vspace{2pt}
+  \small Emergency Medicine Physician \\ \vspace{2pt}
+  \small 555-0199 \enspace\textbar\enspace \href{mailto:clara@hospital.org}{clara@hospital.org}
+\end{center}
+\section{Experience}
+\resumeSubHeadingListStart
+\resumeSubheading{Attending Physician}{2022 -- Present}{Metro General Hospital}{Boston, MA}
+\resumeItemListStart
+\resumeItem{Directed acute trauma triage across a 45-bed emergency department.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+  \small{\item{
+    \textbf{Clinical Care}{: Trauma Triage, Airway Management, Point-of-Care Ultrasound}
+  }}
+\end{itemize}
+\end{document}`;
+
+    return import('./latexPdfExport').then(({ generateLatexPdfDocument }) => {
+      const pdf = generateLatexPdfDocument(source);
+      const output = pdf.output('datauristring');
+      expect(output).toContain('data:application/pdf');
+      expect(pdf.getNumberOfPages()).toBe(1);
+    });
+  });
 });

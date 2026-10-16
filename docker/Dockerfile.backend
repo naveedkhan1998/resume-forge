@@ -2,33 +2,15 @@ FROM python:3.12-slim-trixie
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    UV_SYSTEM_PYTHON=1
+    UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1
 
 WORKDIR /app
 
-# Install system dependencies & Tectonic LaTeX engine
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    libpq-dev \
-    gcc \
-    git \
-    fontconfig \
-    libharfbuzz0b \
-    libfontconfig1 \
-    libgraphite2-3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Tectonic standalone binary
-RUN curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh \
-    && mv tectonic /usr/local/bin/
-
-# Install uv for fast Python package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-# Copy project files and install dependencies
+# Copy project metadata and install only required Python dependencies using ephemeral uv mount
 COPY apps/api/pyproject.toml apps/api/README.md /app/apps/api/
-RUN uv pip install -e /app/apps/api
+RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
+    uv pip install --no-cache -e /app/apps/api
 
 # Copy backend code
 COPY apps/api /app/apps/api

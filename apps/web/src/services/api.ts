@@ -320,15 +320,6 @@ export const api = {
     return handleResponse(res);
   },
 
-  async downloadDocumentPdf(docId: number): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/export-pdf`);
-    if (!res.ok) {
-      await handleResponse(res);
-      throw new Error('Could not compile PDF.');
-    }
-    return res.blob();
-  },
-
   async downloadDocumentLatex(docId: number): Promise<Blob> {
     const res = await fetch(`${API_BASE}/documents/${docId}/export-latex`);
     if (!res.ok) {

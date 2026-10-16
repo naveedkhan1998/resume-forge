@@ -27,7 +27,6 @@ from .services.latex_templates import (
     normalize_url,
     validate_latex_document,
 )
-from .services.latex_compiler import LatexCompiler
 from .services.ollama_service import OllamaService
 from .services.pdf_markdown import DocumentMarkdownConverter
 from .services.resume_parser import ResumeParser
@@ -298,83 +297,6 @@ class LatexGenerationTests(SimpleTestCase):
         invalid = r"\begin{document}\textbf{Broken\end{document}"
 
         self.assertFalse(validate_latex_document(invalid))
-
-    def test_compiler_reports_missing_tectonic(self):
-        source = r"\documentclass{article}\begin{document}Resume\end{document}"
-
-        with patch("resumes.services.latex_compiler.shutil.which", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "Tectonic is not installed"):
-                LatexCompiler.compile_pdf(source)
-
-    @staticmethod
-    def _pdf_uris(pdf: bytes) -> set[str]:
-        uris: set[str] = set()
-        reader = PdfReader(io.BytesIO(pdf))
-        for page in reader.pages:
-            for annotation_ref in page.get("/Annots", []):
-                annotation = annotation_ref.get_object()
-                action = annotation.get("/A")
-                if action and action.get("/URI"):
-                    uris.add(str(action["/URI"]))
-        return uris
-
-    @unittest.skipUnless(shutil.which("tectonic"), "Tectonic is required for LaTeX integration testing.")
-    def test_generated_resume_compiles_and_preserves_pdf_links(self):
-        resume = LatexGenerator.generate_resume(
-            profile={
-                "full_name": "Jane Doe",
-                "headline": "R&D Platform Engineer",
-                "email": "jane.doe+jobs@example.com",
-                "phone": "+1 (555) 123-4567",
-                "location": "New York, NY",
-                "linkedin_url": "linkedin.com/in/jane_doe/?utm_source=resume&tab=profile",
-                "github_url": "https://github.com/jane-doe",
-                "website_url": "https://jane-doe.dev/#selected_work",
-                "summary": r"Built C:\platform services with 99.99% availability & clear ownership.",
-            },
-            experiences=[{
-                "role": "Senior Platform Engineer",
-                "company": "Example & Co.",
-                "location": "Remote",
-                "start_date": "2022",
-                "end_date": "",
-                "is_current": True,
-                "bullet_points": [
-                    "Reduced p99 latency by 42% across API_v2.",
-                    r"Owned R&D tooling under C:\platform\tools.",
-                ],
-            }],
-            educations=[{
-                "institution": "University #1",
-                "degree": "B.S.",
-                "field_of_study": "Computer Science",
-                "start_date": "2014",
-                "end_date": "2018",
-            }],
-            skills=[
-                {"category": "Languages & Tools", "name": "Python"},
-                {"category": "Languages & Tools", "name": "C#"},
-            ],
-            projects=[{
-                "title": "Distributed Cache",
-                "repo_url": "https://github.com/jane-doe/cache_service",
-                "live_url": "https://cache.example.com/demo?v=1&debug=true#results",
-                "start_date": "2021",
-                "end_date": "2022",
-                "bullet_points": ["Handled 5M requests/minute at 99.9% availability."],
-                "technologies": ["Python", "Redis"],
-            }],
-        )
-
-        pdf = LatexCompiler.compile_pdf(resume, timeout=180)
-        self.assertEqual(len(PdfReader(io.BytesIO(pdf)).pages), 1)
-        uris = self._pdf_uris(pdf)
-
-        self.assertIn("mailto:jane.doe+jobs@example.com", uris)
-        self.assertIn("https://linkedin.com/in/jane_doe/?utm_source=resume&tab=profile", uris)
-        self.assertIn("https://jane-doe.dev/#selected_work", uris)
-        self.assertIn("https://github.com/jane-doe/cache_service", uris)
-        self.assertIn("https://cache.example.com/demo?v=1&debug=true#results", uris)
 
 
 class SectionEditorTests(SimpleTestCase):
@@ -1147,31 +1069,6 @@ class LatexUnicodeAndSemanticSanitizationTests(TestCase):
         self.assertIn(r"\DeclareUnicodeCharacter{2011}{-}", RESUMEFORGE_CLASS)
         self.assertIn(r"\DeclareUnicodeCharacter{202F}{\,}", RESUMEFORGE_CLASS)
         self.assertIn(r"\RequirePackage{textcomp}", RESUMEFORGE_CLASS)
-
-    @unittest.skipUnless(shutil.which("tectonic"), "Tectonic is not installed in this environment")
-    def test_compiler_does_not_drop_hyphens_with_unicode_source(self):
-        from resumes.services.latex_compiler import LatexCompiler
-        import pypdf, io
-
-        source = (
-            r"\documentclass{resumeforge}" "\n"
-            r"\begin{document}" "\n"
-            r"\section{Experience}" "\n"
-            r"\resumeSubHeadingListStart" "\n"
-            r"\resumeSubheading{Software Developer}{2026 -- Present}{Vretta}{Toronto, ON}" "\n"
-            r"\resumeItemListStart" "\n"
-            r"  \resumeItem{Testing high" + "\u2011" + r"throughput and low" + "\u2011" + r"latency systems with $>$1,000 ops/min.}" "\n"
-            r"\resumeItemListEnd" "\n"
-            r"\resumeSubHeadingListEnd" "\n"
-            r"\end{document}"
-        )
-        pdf = LatexCompiler.compile_pdf(source)
-        reader = pypdf.PdfReader(io.BytesIO(pdf))
-        extracted = reader.pages[0].extract_text()
-        self.assertIn("high-throughput", extracted)
-        self.assertIn("low-latency", extracted)
-        self.assertNotIn("highthroughput", extracted)
-        self.assertNotIn("lowlatency", extracted)
 
     def test_experience_duration_correction(self):
         from resumes.services.latex_templates import normalize_unicode_and_latex_text

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.nx
+.venv
+node_modules
+dist
+apps/web
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.sqlite3
+media
+.env

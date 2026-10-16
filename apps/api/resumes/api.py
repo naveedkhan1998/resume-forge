@@ -28,7 +28,6 @@ from .services.resume_parser import ResumeParser
 from .services.pdf_markdown import DocumentMarkdownConverter
 from .services.tailor_service import TailorService
 from .services.section_editor import SectionEditor
-from .services.latex_compiler import LatexCompiler
 from .services.latex_templates import RESUMEFORGE_CLASS, normalize_unicode_and_latex_text
 
 api = NinjaAPI(
@@ -748,22 +747,6 @@ def export_latex(request: HttpRequest, doc_id: int):
     filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}.tex")
     cleaned_source = normalize_unicode_and_latex_text(doc.latex_source)
     response = HttpResponse(cleaned_source, content_type="application/x-tex; charset=utf-8")
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    return response
-
-@api.get("/documents/{int:doc_id}/export-pdf")
-def export_pdf(request: HttpRequest, doc_id: int):
-    user = get_current_user(request)
-    doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
-    try:
-        pdf = LatexCompiler.compile_pdf(doc.latex_source)
-    except RuntimeError as exc:
-        return api.create_response(request, {"error": str(exc)}, status=503)
-    except ValueError as exc:
-        return api.create_response(request, {"error": str(exc)}, status=422)
-
-    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{doc.application.company_name}_{doc.doc_type}.pdf")
-    response = HttpResponse(pdf, content_type="application/pdf")
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 

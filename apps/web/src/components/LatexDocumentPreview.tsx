@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { parseLatexDocument, ParsedDocument } from '../utils/latexParser';
-import html2pdf from 'html2pdf.js';
+import { downloadLatexPdf } from '../utils/latexPdfExport';
 import { Download, Printer, Copy, Check, Eye, Loader2, FolderArchive, FileCode, Wand2 } from 'lucide-react';
 import { api } from '../services/api';
 import { RESUMEFORGE_CLASS } from '../utils/latexClass';
@@ -31,32 +31,12 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
 
   const doc: ParsedDocument = parseLatexDocument(latexSource);
 
-  const handleDownloadPdf = async () => {
-    if (!printRef.current) return;
+  const handleDownloadPdf = () => {
     setDownloading(true);
     setDownloadError(null);
     try {
       const filename = `${companyName || 'Candidate'}_${docType}.pdf`.replace(/\s+/g, '_');
-      if (documentId) {
-        const blob = await api.downloadDocumentPdf(documentId);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-      const opt = {
-        margin: [10, 10, 10, 10] as [number, number, number, number],
-        filename,
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' as const },
-        enableLinks: true,
-      };
-
-      await html2pdf().set(opt).from(printRef.current).save();
+      downloadLatexPdf(latexSource, filename);
     } catch (err) {
       console.error('Client-side PDF generation failed:', err);
       setDownloadError(err instanceof Error ? err.message : 'PDF generation failed.');
@@ -186,7 +166,7 @@ export const LatexDocumentPreview: React.FC<LatexDocumentPreviewProps> = ({
             disabled={downloading}
           >
             {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {documentId ? 'Download PDF' : 'Export PDF'}
+            Download PDF
           </Button>
         </div>
       </div>
