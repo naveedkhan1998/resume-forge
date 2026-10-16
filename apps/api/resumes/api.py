@@ -134,8 +134,8 @@ class ProjectSchema(Schema):
 class AISettingsSchema(Schema):
     provider: Optional[str] = "ollama"
     ollama_endpoint: Optional[str] = "http://localhost:11434"
-    pydantic_gateway_endpoint: Optional[str] = "https://gateway.pydantic.dev/v1"
-    openrouter_endpoint: Optional[str] = "https://gateway.pydantic.dev/v1"
+    pydantic_gateway_endpoint: Optional[str] = None
+    openrouter_endpoint: Optional[str] = None
     api_key: Optional[str] = ""
     model_name: str
     embedding_model: Optional[str] = "nomic-embed-text"
@@ -276,9 +276,8 @@ def ai_health(
 def get_ai_settings(request: HttpRequest):
     user = get_current_user(request)
     settings_obj, _ = UserAISettings.objects.get_or_create(user=user)
-    # Normalize legacy 'openrouter' provider label to 'pydantic_gateway' for UI while keeping user's own config only
-    effective_provider = settings_obj.provider
-    if effective_provider in {"openrouter", "gateway"}:
+    effective_provider = settings_obj.provider or "ollama"
+    if effective_provider == "gateway":
         effective_provider = "pydantic_gateway"
     return {
         "provider": effective_provider,

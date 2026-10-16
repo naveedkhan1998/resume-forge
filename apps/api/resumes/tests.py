@@ -3,8 +3,9 @@ import json
 import shutil
 import unittest
 import zipfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import httpx
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase
 
@@ -1563,5 +1564,98 @@ Portfolio: https://adalovelace.dev
         payload = response.json()
         self.assertIn("React, GraphQL", payload["latex_source"])
         self.assertEqual(payload["keyword_coverage"]["coverage_pct"], 100)
+
+    def test_pydantic_gateway_settings_roundtrip(self):
+        save_res = self.client.post(
+            "/api/ai/settings",
+            data=json.dumps({
+                "provider": "pydantic_gateway",
+                "ollama_endpoint": "http://localhost:11434",
+                "pydantic_gateway_endpoint": "https://gateway.pydantic.dev/v1",
+                "api_key": "pylf_user_key_123",
+                "model_name": "qwen3.5:9b",
+                "embedding_model": "nomic-embed-text",
+                "temperature": 0.4,
+                "custom_instructions": "Focus on clinical outcomes.",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(save_res.status_code, 200)
+
+        get_res = self.client.get("/api/ai/settings")
+        self.assertEqual(get_res.status_code, 200)
+        data = get_res.json()
+        self.assertEqual(data["provider"], "pydantic_gateway")
+        self.assertEqual(data["pydantic_gateway_endpoint"], "https://gateway.pydantic.dev/v1")
+        self.assertEqual(data["api_key"], "pylf_user_key_123")
+        self.assertEqual(data["model_name"], "qwen3.5:9b")
+
+    @patch("resumes.services.ollama_service.httpx.Client")
+    def test_local_ollama_preset_probing_recommends_reachable_docker_host(self, mock_client_cls):
+        def fake_get(url, **kwargs):
+            mock_resp = MagicMock()
+            if "host.docker.internal:11434" in url:
+                mock_resp.status_code = 200
+                mock_resp.json.return_value = {"models": [{"name": "qwen3.5:9b"}]}
+                return mock_resp
+            raise httpx.ConnectError("Connection refused")
+
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value.get.side_effect = fake_get
+        mock_client_cls.return_value = mock_client
+
+        res = self.client.get("/api/ai/health?provider=ollama&endpoint=http://localhost:11434&probe_presets=true")
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["recommended_endpoint"], "http://host.docker.internal:11434")
+        self.assertTrue(any(p["url"] == "http://host.docker.internal:11434" and p["connected"] for p in payload["presets"]))
+
+    @patch("resumes.services.ollama_service.httpx.Client")
+    def test_system_level_fallback_never_exposes_secrets_and_routes_when_user_llm_unavailable(self, mock_client_cls):
+        from django.test import override_settings
+
+        with override_settings(
+            SYSTEM_LLM_PROVIDER="pydantic_gateway",
+            SYSTEM_LLM_BASE_URL="https://secret-system-gateway.internal/v1",
+            SYSTEM_LLM_API_KEY="super_secret_env_api_key_do_not_leak",
+            SYSTEM_LLM_MODEL="qwen3.5:9b",
+        ):
+            # 1. Verify GET /api/ai/settings NEVER exposes the system API key or system base URL
+            get_res = self.client.get("/api/ai/settings")
+            self.assertEqual(get_res.status_code, 200)
+            raw_body = get_res.content.decode("utf-8")
+            self.assertNotIn("super_secret_env_api_key_do_not_leak", raw_body)
+            self.assertNotIn("secret-system-gateway.internal", raw_body)
+            settings_json = get_res.json()
+            self.assertTrue(settings_json["system_fallback_available"])
+            self.assertEqual(settings_json["api_key"], "")
+
+            # 2. Verify that when user's local Ollama fails to connect, OllamaService falls back to the system gateway
+            def fake_post(url, headers=None, json=None, **kwargs):
+                if "localhost:11434" in url:
+                    raise httpx.ConnectError("Local Ollama not running")
+                if "secret-system-gateway.internal" in url:
+                    self.assertIn("super_secret_env_api_key_do_not_leak", headers.get("Authorization", ""))
+                    mock_resp = MagicMock()
+                    mock_resp.status_code = 200
+                    mock_resp.raise_for_status.return_value = None
+                    mock_resp.json.return_value = {
+                        "choices": [{"message": {"role": "assistant", "content": '{"ok": true}'}}]
+                    }
+                    return mock_resp
+                raise AssertionError(f"Unexpected URL: {url}")
+
+            mock_client = MagicMock()
+            mock_client.__enter__.return_value.post.side_effect = fake_post
+            mock_client_cls.return_value = mock_client
+
+            svc = OllamaService.from_user(self.user)
+            msg = svc.chat_sync(
+                model="qwen3.5:9b",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+            self.assertEqual(msg["content"], '{"ok": true}')
+
 
 
