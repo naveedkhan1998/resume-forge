@@ -215,7 +215,7 @@ def get_experience_prompt_guidelines(metrics: Dict[str, Any]) -> str:
 
     if display_years >= 1 and date_range_str:
         return (
-            f"Candidate has {display_str} of professional engineering experience ({date_range_str}). "
+            f"Candidate has {display_str} of professional experience ({date_range_str}). "
             f"Accurately state '{display_str}'; NEVER state fewer years or undersell the candidate's seniority."
         )
     return (

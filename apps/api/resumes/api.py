@@ -2,8 +2,8 @@ import io
 import json
 import re
 import zipfile
-from typing import Any, List, Literal, Optional
-from ninja import NinjaAPI, File, Schema
+from typing import Any, Dict, List, Literal, Optional
+from ninja import NinjaAPI, File, Form, Schema
 from ninja.files import UploadedFile
 from ninja.security import django_auth
 from django.contrib.auth import authenticate, login, logout
@@ -25,6 +25,7 @@ from .models import (
 )
 from .services.ollama_service import OllamaService
 from .services.resume_parser import ResumeParser
+from .services.pdf_markdown import DocumentMarkdownConverter
 from .services.tailor_service import TailorService
 from .services.section_editor import SectionEditor
 from .services.latex_compiler import LatexCompiler
@@ -161,6 +162,21 @@ class RefineSectionSchema(Schema):
     current_content: Any
     instruction: str
     conversation: List[RefineChatMessageSchema] = []
+    section_context: Optional[Dict[str, Any]] = None
+
+class ParseResumeTextSchema(Schema):
+    raw_text: Optional[str] = None
+    text: Optional[str] = None
+    mode: Optional[str] = "merge"
+
+class AIEditLatexSchema(Schema):
+    latex_source: Optional[str] = None
+    instruction: str
+    target_section: Optional[str] = "all"
+    model_name: Optional[str] = None
+    job_id: Optional[int] = None
+    save_to_document: Optional[bool] = False
+    conversation: List[RefineChatMessageSchema] = []
 
 class UpdateDocumentSchema(Schema):
     latex_source: str
@@ -291,7 +307,10 @@ def refine_section(request: HttpRequest, data: RefineSectionSchema):
     user = get_current_user(request)
     ai_settings = getattr(user, 'ai_settings', None)
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
+    custom_instructions = ai_settings.custom_instructions if ai_settings else ""
     service = OllamaService.from_user(user)
+    master_data = TailorService.get_user_master_data(user)
+    candidate_context = {k: v for k, v in master_data.items() if k != "source_resume_text"}
     try:
         return SectionEditor.refine_section(
             section_type=data.section_type,
@@ -300,6 +319,9 @@ def refine_section(request: HttpRequest, data: RefineSectionSchema):
             conversation=[message.dict() for message in data.conversation],
             model_name=model,
             ollama_service=service,
+            section_context=data.section_context,
+            candidate_context=candidate_context,
+            custom_instructions=custom_instructions,
         )
     except (RuntimeError, ValueError) as exc:
         return api.create_response(request, {"error": str(exc)}, status=502)
@@ -465,6 +487,28 @@ def replace_skills(request: HttpRequest, data: List[SkillSchema]):
         ])
     return {"status": "success"}
 
+@api.post("/master/certifications")
+def create_certification(request: HttpRequest, data: CertificationSchema):
+    user = get_current_user(request)
+    cert = Certification.objects.create(user=user, **data.dict(exclude={'id'}))
+    return {"status": "success", "id": cert.id}
+
+@api.put("/master/certifications/{int:cert_id}")
+def update_certification(request: HttpRequest, cert_id: int, data: CertificationSchema):
+    user = get_current_user(request)
+    cert = get_object_or_404(Certification, id=cert_id, user=user)
+    for key, val in data.dict(exclude={'id'}).items():
+        setattr(cert, key, val)
+    cert.save()
+    return {"status": "success"}
+
+@api.delete("/master/certifications/{int:cert_id}")
+def delete_certification(request: HttpRequest, cert_id: int):
+    user = get_current_user(request)
+    cert = get_object_or_404(Certification, id=cert_id, user=user)
+    cert.delete()
+    return {"status": "success"}
+
 @api.put("/master/certifications")
 def replace_certifications(request: HttpRequest, data: List[CertificationSchema]):
     user = get_current_user(request)
@@ -510,8 +554,34 @@ def delete_project(request: HttpRequest, proj_id: int):
 # -------------------------------------------------------------
 # Resume Upload & Auto-Parsing
 # -------------------------------------------------------------
+def _build_parse_response(raw_text: str, parsed_data: Dict[str, Any], mode: str = "merge") -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "message": (
+            "Resume parsed and replaced master profile"
+            if mode == "replace"
+            else "Resume parsed and merged into master profile"
+        ),
+        "mode": mode,
+        "markdown_text": raw_text,
+        "parsed_summary": {
+            "name": parsed_data.get("profile", {}).get("full_name"),
+            "profile": parsed_data.get("profile", {}),
+            "experiences_count": len(parsed_data.get("experiences", [])),
+            "educations_count": len(parsed_data.get("educations", [])),
+            "skills_count": len(parsed_data.get("skills", [])),
+            "projects_count": len(parsed_data.get("projects", [])),
+            "certifications_count": len(parsed_data.get("certifications", [])),
+        },
+    }
+
+
 @api.post("/resumes/upload")
-def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
+def upload_resume(
+    request: HttpRequest,
+    file: UploadedFile = File(...),
+    mode: str = Form("merge"),
+):
     extension = file.name.lower().rsplit(".", 1)[-1] if "." in file.name else ""
     if extension not in {"pdf", "docx", "txt"}:
         return api.create_response(request, {"error": "Upload a PDF, DOCX, or TXT file."}, status=400)
@@ -525,27 +595,36 @@ def upload_resume(request: HttpRequest, file: UploadedFile = File(...)):
     ai_settings = getattr(user, 'ai_settings', None)
     model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
     service = OllamaService.from_user(user)
+    normalized_mode = "replace" if (mode or "").strip().lower() == "replace" else "merge"
 
     try:
         parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, ollama_service=service)
-        ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text)
+        ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text, mode=normalized_mode)
     except (RuntimeError, ValueError) as exc:
         return api.create_response(request, {"error": str(exc)}, status=502)
 
-    return {
-        "status": "success",
-        "message": "Resume parsed and imported into master profile",
-        "markdown_text": raw_text,
-        "parsed_summary": {
-            "name": parsed_data.get("profile", {}).get("full_name"),
-            "profile": parsed_data.get("profile", {}),
-            "experiences_count": len(parsed_data.get("experiences", [])),
-            "educations_count": len(parsed_data.get("educations", [])),
-            "skills_count": len(parsed_data.get("skills", [])),
-            "projects_count": len(parsed_data.get("projects", [])),
-            "certifications_count": len(parsed_data.get("certifications", [])),
-        }
-    }
+    return _build_parse_response(raw_text, parsed_data, mode=normalized_mode)
+
+
+@api.post("/resumes/parse-text")
+def parse_resume_text(request: HttpRequest, data: ParseResumeTextSchema):
+    raw_text = (data.raw_text or data.text or "").strip()
+    if not raw_text:
+        return api.create_response(request, {"error": "Paste your resume text or career notes first."}, status=400)
+
+    user = get_current_user(request)
+    ai_settings = getattr(user, 'ai_settings', None)
+    model = ai_settings.model_name if ai_settings else "qwen3.5:9b"
+    service = OllamaService.from_user(user)
+    normalized_mode = "replace" if (data.mode or "").strip().lower() == "replace" else "merge"
+
+    try:
+        parsed_data = ResumeParser.parse_with_ai(raw_text, model_name=model, ollama_service=service)
+        ResumeParser.save_to_database(user, parsed_data, raw_text=raw_text, mode=normalized_mode)
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
+
+    return _build_parse_response(raw_text, parsed_data, mode=normalized_mode)
 
 
 # -------------------------------------------------------------
@@ -589,15 +668,29 @@ def get_job_detail(request: HttpRequest, job_id: int):
     user = get_current_user(request)
     app = get_object_or_404(JobApplication, id=job_id, user=user)
     docs = []
+    latest_resume_latex = ""
     for d in app.documents.all():
+        cleaned_latex = normalize_unicode_and_latex_text(d.latex_source)
+        if d.doc_type == "resume" and not latest_resume_latex:
+            latest_resume_latex = cleaned_latex
         docs.append({
             "id": d.id,
             "doc_type": d.doc_type,
             "version": d.version,
-            "latex_source": normalize_unicode_and_latex_text(d.latex_source),
+            "latex_source": cleaned_latex,
             "tailoring_rationale": d.tailoring_rationale,
             "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
         })
+
+    keyword_coverage = None
+    if app.extracted_keywords and latest_resume_latex:
+        master_data = TailorService.get_user_master_data(user)
+        keyword_coverage = TailorService.analyze_keyword_coverage(
+            keywords=app.extracted_keywords,
+            latex_source=latest_resume_latex,
+            master_data=master_data,
+        )
+
     return {
         "id": app.id,
         "company_name": app.company_name,
@@ -607,6 +700,7 @@ def get_job_detail(request: HttpRequest, job_id: int):
         "status": app.status,
         "match_score": app.match_score,
         "extracted_keywords": app.extracted_keywords,
+        "keyword_coverage": keyword_coverage,
         "notes": app.notes,
         "documents": docs,
     }
@@ -726,6 +820,7 @@ def review_document_sections(request: HttpRequest, doc_id: int, data: Optional[R
         latex_source=source_to_review,
         model_name=model,
         ollama_service=service,
+        target_keywords=doc.application.extracted_keywords or [],
     )
 
     doc.latex_source = reviewed_latex
@@ -749,3 +844,75 @@ def review_custom_latex(request: HttpRequest, data: ReviewSectionsSchema):
         ollama_service=service,
     )
     return {"status": "success", "latex_source": reviewed_latex}
+
+
+@api.post("/documents/{int:doc_id}/ai-edit")
+def ai_edit_document_latex(request: HttpRequest, doc_id: int, data: AIEditLatexSchema):
+    user = get_current_user(request)
+    doc = get_object_or_404(TailoredDocument, id=doc_id, application__user=user)
+    ai_settings = getattr(user, 'ai_settings', None)
+    model = data.model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
+    source_to_edit = data.latex_source or doc.latex_source
+
+    service = OllamaService.from_user(user)
+    master_data = TailorService.get_user_master_data(user)
+    try:
+        result = TailorService.ai_edit_latex_document(
+            latex_source=source_to_edit,
+            instruction=data.instruction,
+            model_name=model,
+            ollama_service=service,
+            target_section=data.target_section or "all",
+            job_description=doc.application.raw_description,
+            master_data=master_data,
+        )
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
+
+    doc.latex_source = result["latex_source"]
+    doc.save(update_fields=["latex_source", "updated_at"])
+
+    keyword_coverage = None
+    if doc.doc_type == "resume" and doc.application.extracted_keywords:
+        keyword_coverage = TailorService.analyze_keyword_coverage(
+            keywords=doc.application.extracted_keywords,
+            latex_source=doc.latex_source,
+            master_data=master_data,
+        )
+
+    return {
+        "status": "success",
+        "latex_source": result["latex_source"],
+        "changes_summary": result["changes_summary"],
+        "keyword_coverage": keyword_coverage,
+    }
+
+
+@api.post("/documents/ai-edit-latex")
+def ai_edit_custom_latex(request: HttpRequest, data: AIEditLatexSchema):
+    user = get_current_user(request)
+    if not data.latex_source:
+        return api.create_response(request, {"error": "latex_source is required."}, status=400)
+    ai_settings = getattr(user, 'ai_settings', None)
+    model = data.model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
+
+    service = OllamaService.from_user(user)
+    master_data = TailorService.get_user_master_data(user)
+    try:
+        result = TailorService.ai_edit_latex_document(
+            latex_source=data.latex_source,
+            instruction=data.instruction,
+            model_name=model,
+            ollama_service=service,
+            target_section=data.target_section or "all",
+            master_data=master_data,
+        )
+    except (RuntimeError, ValueError) as exc:
+        return api.create_response(request, {"error": str(exc)}, status=502)
+
+    return {
+        "status": "success",
+        "latex_source": result["latex_source"],
+        "changes_summary": result["changes_summary"],
+    }
+

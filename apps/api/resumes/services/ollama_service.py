@@ -216,7 +216,7 @@ class OllamaService:
                 "keep_alive": "15m",
                 "options": {
                     "temperature": max(0.0, min(1.0, temperature)),
-                    "num_ctx": 8192,
+                    "num_ctx": 16384,
                 },
             }
             if format_json:
@@ -247,24 +247,45 @@ class OllamaService:
             return message
 
     @staticmethod
-    def _decode_json(content: str) -> Dict[str, Any]:
-        cleaned = content.strip()
+    def _strip_reasoning_tokens(text: str) -> str:
+        """Remove <think>...</think> blocks emitted by reasoning models."""
+        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        if "<think>" in cleaned.lower() and "</think>" not in cleaned.lower():
+            # If an unclosed <think> precedes a JSON object, keep from the last '{' block or after <think>
+            idx = cleaned.lower().rfind("</think>")
+            if idx != -1:
+                cleaned = cleaned[idx + 8:]
+        return cleaned.strip()
+
+    @staticmethod
+    def _try_parse_json_dict(raw: str) -> Dict[str, Any]:
+        """Parse JSON string with fallback cleanup for trailing commas."""
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            fixed = re.sub(r",\s*([}\]])", r"\1", raw)
+            result = json.loads(fixed)
+        if not isinstance(result, dict):
+            raise ValueError("Ollama JSON response must be an object.")
+        return result
+
+    @classmethod
+    def _decode_json(cls, content: str) -> Dict[str, Any]:
+        cleaned = cls._strip_reasoning_tokens(content.strip())
         fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
         if fenced:
             cleaned = fenced.group(1).strip()
 
         try:
-            result = json.loads(cleaned)
-        except json.JSONDecodeError:
+            return cls._try_parse_json_dict(cleaned)
+        except (json.JSONDecodeError, ValueError) as initial_err:
             start = cleaned.find("{")
             end = cleaned.rfind("}")
             if start < 0 or end <= start:
-                raise
-            result = json.loads(cleaned[start:end + 1])
-
-        if not isinstance(result, dict):
-            raise ValueError("Ollama JSON response must be an object.")
-        return result
+                if isinstance(initial_err, ValueError):
+                    raise
+                raise initial_err
+            return cls._try_parse_json_dict(cleaned[start:end + 1])
 
     def chat_json_sync(
         self,
@@ -272,8 +293,9 @@ class OllamaService:
         messages: List[Dict[str, str]],
         temperature: float = 0.2,
         required_keys: Sequence[str] = (),
+        schema_hint: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Request JSON and make one focused repair attempt for small local models."""
+        """Request JSON and make a focused schema-aware repair attempt for local/cloud models."""
         try:
             response = self.chat_sync(
                 model=model,
@@ -298,6 +320,13 @@ class OllamaService:
             )
         content = str(response["content"])
 
+        required_clause = (
+            f" Required top-level keys: {', '.join(required_keys)}."
+            if required_keys
+            else ""
+        )
+        schema_clause = f"\nExpected schema:\n{schema_hint}" if schema_hint else ""
+
         try:
             result = self._decode_json(content)
         except (json.JSONDecodeError, ValueError) as first_error:
@@ -306,10 +335,10 @@ class OllamaService:
                     "role": "system",
                     "content": (
                         "Repair the supplied output into one valid JSON object. Preserve its data, "
-                        "add no commentary, and return JSON only."
+                        f"add no commentary, and return JSON only.{required_clause}{schema_clause}"
                     ),
                 },
-                {"role": "user", "content": content[:12000]},
+                {"role": "user", "content": content[:14000]},
             ]
             repaired = self.chat_sync(
                 model=model,
@@ -325,6 +354,30 @@ class OllamaService:
                 ) from first_error
 
         missing = [key for key in required_keys if key not in result]
+        if missing and schema_hint:
+            repair_missing_messages = [
+                *messages,
+                {"role": "assistant", "content": json.dumps(result, ensure_ascii=False)},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Your JSON response is missing required top-level fields: {', '.join(missing)}. "
+                        f"Return the complete JSON object including all required keys ({', '.join(required_keys)})."
+                    ),
+                },
+            ]
+            try:
+                repaired_missing = self.chat_sync(
+                    model=model,
+                    messages=repair_missing_messages,
+                    temperature=0.0,
+                    format_json=True,
+                )
+                result = self._decode_json(str(repaired_missing["content"]))
+            except Exception:
+                pass
+            missing = [key for key in required_keys if key not in result]
+
         if missing:
             raise ValueError(
                 f"Ollama response is missing required fields: {', '.join(missing)}"

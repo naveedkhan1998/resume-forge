@@ -1148,6 +1148,7 @@ class LatexUnicodeAndSemanticSanitizationTests(TestCase):
         self.assertIn(r"\DeclareUnicodeCharacter{202F}{\,}", RESUMEFORGE_CLASS)
         self.assertIn(r"\RequirePackage{textcomp}", RESUMEFORGE_CLASS)
 
+    @unittest.skipUnless(shutil.which("tectonic"), "Tectonic is not installed in this environment")
     def test_compiler_does_not_drop_hyphens_with_unicode_source(self):
         from resumes.services.latex_compiler import LatexCompiler
         import pypdf, io
@@ -1412,9 +1413,258 @@ class LatexUnicodeAndSemanticSanitizationTests(TestCase):
 
         metrics_4y = {"display_years": 4, "display_str": "4+ years", "date_range_str": "Jun 2022 to Present"}
         tailor_prompt_4y = build_tailor_system_prompt(metrics_4y)
-        self.assertIn("Candidate has 4+ years of professional engineering experience (Jun 2022 to Present)", tailor_prompt_4y)
+        self.assertIn("Candidate has 4+ years of professional experience (Jun 2022 to Present)", tailor_prompt_4y)
         self.assertNotIn("across GenioBITS", tailor_prompt_4y)
+        self.assertNotIn("FastAPI", tailor_prompt_4y)
+        self.assertNotIn("signal-to-order", tailor_prompt_4y)
 
         metrics_8y = {"display_years": 8, "display_str": "8+ years", "date_range_str": "May 2018 to Present"}
         review_prompt_8y = build_review_system_prompt(metrics_8y)
-        self.assertIn("Candidate has 8+ years of professional engineering experience (May 2018 to Present)", review_prompt_8y)
+        self.assertIn("Candidate has 8+ years of professional experience (May 2018 to Present)", review_prompt_8y)
+        self.assertNotIn("FastAPI", review_prompt_8y)
+
+    def test_non_engineering_professions_preserve_skill_categories_and_jd_signals(self):
+        from resumes.services.latex_templates import consolidate_skills_to_latex
+        from resumes.services.tailor_service import TailorService
+
+        nurse_And_artist_skills = [
+            {"category": "Clinical Care", "name": "Patient Triage"},
+            {"category": "Clinical Care", "name": "IV Therapy"},
+            {"category": "Medical Systems", "name": "Epic EHR"},
+            {"category": "Fine Arts & Media", "name": "Oil Painting"},
+            {"category": "Languages", "name": "Spanish"},
+        ]
+        latex_skills = consolidate_skills_to_latex(nurse_And_artist_skills)
+        self.assertIn(r"\textbf{Clinical Care}{: Patient Triage, IV Therapy}", latex_skills)
+        self.assertIn(r"\textbf{Medical Systems}{: Epic EHR}", latex_skills)
+        self.assertIn(r"\textbf{Fine Arts \& Media}{: Oil Painting}", latex_skills)
+        self.assertIn(r"\textbf{Languages}{: Spanish}", latex_skills)
+        self.assertNotIn("Frameworks", latex_skills)
+
+        jd_signals = TailorService.extract_jd_signals(
+            "Registered Nurse - Emergency Department",
+            "Seeking an RN skilled in Patient Triage, IV Therapy, ACLS, and Epic EHR documentation.",
+            master_data={"skills": nurse_And_artist_skills},
+        )
+        detected = jd_signals["detected_keywords"]
+        self.assertIn("Patient Triage", detected)
+        self.assertIn("IV Therapy", detected)
+        self.assertIn("Epic EHR", detected)
+        self.assertIn("ACLS", detected)
+
+
+class EnhancedLLMWorkflowsTests(TestCase):
+    def setUp(self):
+        self.user, _ = User.objects.get_or_create(username="demo_user")
+
+    def test_decode_json_strips_think_tags_and_trailing_commas(self):
+        raw = """<think>
+Let me analyze the resume structure carefully.
+</think>
+```json
+{
+  "proposed_content": ["Built distributed APIs", "Scaled Postgres"],
+  "explanation": "Tightened bullets.",
+}
+```"""
+        parsed = OllamaService._decode_json(raw)
+        self.assertEqual(parsed["proposed_content"], ["Built distributed APIs", "Scaled Postgres"])
+        self.assertEqual(parsed["explanation"], "Tightened bullets.")
+
+    def test_resume_parser_extracts_contacts_and_expands_grouped_skills(self):
+        raw_text = """# Ada Lovelace
+ada@analytical.org | +1 (415) 555-0199 | linkedin.com/in/adalovelace | github.com/ada
+Portfolio: https://adalovelace.dev
+"""
+        contacts = ResumeParser.extract_contact_and_links(raw_text)
+        self.assertEqual(contacts["full_name"], "Ada Lovelace")
+        self.assertEqual(contacts["email"], "ada@analytical.org")
+        self.assertIn("linkedin.com/in/adalovelace", contacts["linkedin_url"])
+        self.assertIn("github.com/ada", contacts["github_url"])
+        self.assertEqual(contacts["website_url"], "https://adalovelace.dev")
+
+        normalized = ResumeParser.normalize_parsed_data({
+            "profile": {},
+            "skills": [
+                {"category": "Languages", "skills": ["Python", "TypeScript, Go"]},
+                {"category": "Cloud", "items": ["Kubernetes", "Docker"]},
+            ],
+        })
+        skill_names = [(s["category"], s["name"]) for s in normalized["skills"]]
+        self.assertIn(("Languages", "Python"), skill_names)
+        self.assertIn(("Languages", "TypeScript"), skill_names)
+        self.assertIn(("Languages", "Go"), skill_names)
+        self.assertIn(("Cloud", "Kubernetes"), skill_names)
+
+    @patch.object(OllamaService, "chat_json_sync")
+    def test_parse_text_endpoint_and_replace_mode(self, mock_chat):
+        Experience.objects.create(user=self.user, company="Old Corp", role="Intern", bullet_points=["Legacy work"])
+        mock_chat.return_value = {
+            "profile": {"headline": "Staff Systems Engineer"},
+            "experiences": [
+                {
+                    "company": "New Corp",
+                    "role": "Principal Engineer",
+                    "start_date": "Jan 2024",
+                    "end_date": "Present",
+                    "is_current": True,
+                    "bullet_points": ["Architected multi-region platform"],
+                    "technologies": ["Go", "Kafka"],
+                }
+            ],
+            "educations": [],
+            "skills": [{"category": "Languages", "skills": ["Go", "Python"]}],
+            "projects": [],
+            "certifications": [],
+        }
+
+        response = self.client.post(
+            "/api/resumes/parse-text",
+            data=json.dumps({
+                "raw_text": "# Grace Hopper\ngrace@navy.mil | github.com/grace\nPrincipal Engineer at New Corp",
+                "mode": "replace",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["mode"], "replace")
+        self.assertEqual(payload["parsed_summary"]["profile"]["full_name"], "Grace Hopper")
+        self.assertEqual(payload["parsed_summary"]["profile"]["email"], "grace@navy.mil")
+        self.assertEqual(list(self.user.experiences.values_list("company", flat=True)), ["New Corp"])
+        self.assertEqual(self.user.skills.count(), 2)
+
+    @patch.object(OllamaService, "chat_json_sync")
+    def test_refine_section_injects_context_and_returns_proposed_technologies(self, mock_chat):
+        Profile.objects.create(user=self.user, full_name="Linus", headline="Kernel Engineer")
+        exp = Experience.objects.create(
+            user=self.user,
+            company="Acme",
+            role="Backend Engineer",
+            bullet_points=["Built APIs with FastAPI and Redis"],
+            technologies=["FastAPI"],
+        )
+        mock_chat.return_value = {
+            "proposed_content": ["Architected low-latency FastAPI and Redis services handling 10k RPS."],
+            "proposed_technologies": ["FastAPI", "Redis", "Python"],
+            "explanation": "Added Redis to technologies and sharpened impact.",
+            "assistant_message": "Updated bullet and extracted Redis.",
+        }
+
+        response = self.client.post(
+            "/api/ai/refine-section",
+            data=json.dumps({
+                "section_type": "experience",
+                "current_content": exp.bullet_points,
+                "instruction": "Strengthen bullet and extract technologies",
+                "section_context": {"role": exp.role, "company": exp.company, "technologies": exp.technologies},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["proposed_technologies"], ["FastAPI", "Redis", "Python"])
+        called_messages = mock_chat.call_args.kwargs["messages"]
+        self.assertIn("Kernel Engineer", called_messages[1]["content"])
+        self.assertIn("Acme", called_messages[1]["content"])
+
+    @patch.object(OllamaService, "chat_json_sync")
+    def test_tailor_uses_id_matching_and_avoids_duplicate_master_bullet_appending(self, mock_chat):
+        Profile.objects.create(
+            user=self.user,
+            full_name="Alex Rivera",
+            email="alex@example.com",
+            raw_resume_text="Experienced with Terraform infrastructure automation.",
+        )
+        exp = Experience.objects.create(
+            user=self.user,
+            company="Stripe",
+            role="Software Engineer",
+            start_date="Jan 2023",
+            end_date="Present",
+            is_current=True,
+            bullet_points=[
+                "Built payment settlement service in Go processing $10M daily.",
+                "Reduced p99 latency by 35% using Redis caching.",
+                "Implemented idempotency keys across checkout endpoints.",
+            ],
+            technologies=["Go", "Redis", "PostgreSQL"],
+        )
+        Skill.objects.create(user=self.user, category="Backend", name="Go")
+        Skill.objects.create(user=self.user, category="Backend", name="Kubernetes")
+        app = JobApplication.objects.create(
+            user=self.user,
+            company_name="Datadog",
+            job_title="Senior Backend Engineer",
+            raw_description="Looking for Go, Redis, Kubernetes, Terraform, and Kafka experience.",
+        )
+
+        mock_chat.return_value = {
+            "match_score": 88,
+            "extracted_keywords": ["Go", "Redis", "Kubernetes", "Terraform", "Kafka"],
+            "tailoring_rationale": "Matched Go and Redis payment experience.",
+            "tailored_profile": {
+                "headline": "Senior Backend Engineer",
+                "summary": "Backend engineer experienced in Go and Redis.",
+            },
+            "tailored_experiences": [
+                {
+                    "id": exp.id,
+                    "company": "Stripe (Payments)",
+                    "role": "Software Engineer",
+                    "bullet_points": [
+                        "Engineered high-throughput Go payment settlement services processing $10M daily.",
+                        "Cut p99 API latency by 35% through distributed Redis caching.",
+                        "Designed idempotent checkout APIs backed by PostgreSQL.",
+                    ],
+                }
+            ],
+            "tailored_projects": [],
+            "tailored_skills": [{"category": "Backend", "skills": ["Go", "Redis"]}],
+            "cover_letter_body": "Dear Hiring Team,\n\nI am excited to apply.",
+        }
+
+        result = TailorService.tailor_for_job(self.user, app)
+        self.assertEqual(result["match_score"], 88)
+        self.assertIn("keyword_coverage", result)
+        self.assertIn("Kubernetes", result["keyword_coverage"]["matched_keywords"])
+        self.assertIn("Terraform", result["keyword_coverage"]["missing_in_resume_but_in_profile"])
+        self.assertIn("Kafka", result["keyword_coverage"]["missing_keywords"])
+
+        resume_doc = app.documents.get(doc_type="resume")
+        self.assertEqual(resume_doc.latex_source.count(r"\resumeItem{"), 3)
+
+    @patch.object(OllamaService, "chat_json_sync")
+    def test_ai_edit_document_latex_endpoint(self, mock_chat):
+        app = JobApplication.objects.create(
+            user=self.user,
+            company_name="Linear",
+            job_title="Product Engineer",
+            raw_description="TypeScript, React, GraphQL",
+            extracted_keywords=["TypeScript", "React", "GraphQL"],
+        )
+        doc = TailoredDocument.objects.create(
+            application=app,
+            doc_type="resume",
+            latex_source="\\documentclass{resumeforge}\n\\begin{document}\n\\section{Skills}\nTypeScript\n\\end{document}",
+        )
+        mock_chat.return_value = {
+            "updated_latex": "\\documentclass{resumeforge}\n\\begin{document}\n\\section{Skills}\nTypeScript, React, GraphQL\n\\end{document}",
+            "assistant_message": "Added React and GraphQL to Skills section.",
+            "explanation": "Wove in requested skills.",
+        }
+
+        response = self.client.post(
+            f"/api/documents/{doc.id}/ai-edit",
+            data=json.dumps({
+                "instruction": "Add React and GraphQL to the Skills section",
+                "target_section": "skills",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("React, GraphQL", payload["latex_source"])
+        self.assertEqual(payload["keyword_coverage"]["coverage_pct"], 100)
+
+

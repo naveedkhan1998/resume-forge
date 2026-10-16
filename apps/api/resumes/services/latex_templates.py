@@ -235,28 +235,57 @@ CANONICAL_SKILL_CATEGORIES = [
 ]
 
 
-def classify_skill_item(cat_hint: str, name: str) -> str:
-    n_low = name.lower()
-    c_low = cat_hint.lower()
+SPOKEN_LANGUAGES = {
+    "english", "spanish", "french", "german", "mandarin", "cantonese", "arabic",
+    "hindi", "urdu", "portuguese", "italian", "japanese", "korean", "russian",
+    "tagalog", "vietnamese", "punjabi", "bengali", "turkish", "polish", "dutch",
+}
 
-    if n_low in {"python", "c++", "go", "typescript", "javascript", "sql", "rust", "java", "bash", "c"} or "language" in c_low:
+
+def classify_skill_item(cat_hint: str, name: str) -> str:
+    n_low = name.lower().strip()
+    c_clean = cat_hint.strip()
+    c_low = c_clean.lower()
+
+    if (
+        n_low in {
+            "python", "c++", "go", "golang", "typescript", "javascript", "sql", "rust",
+            "java", "bash", "c", "c#", "ruby", "php", "swift", "kotlin", "scala", "dart", "elixir",
+        }
+        or "programming" in c_low
+        or (c_low in {"languages", "coding languages"} and n_low not in SPOKEN_LANGUAGES)
+    ):
         return "Programming Languages"
-    if any(db in n_low for db in ["postgres", "redis", "database", "mongo", "dynamo", "elastic", "cassandra", "kafka", "mysql"]):
+    if (
+        any(db in n_low for db in ["postgres", "redis", "database", "mongo", "dynamo", "elastic", "cassandra", "kafka", "mysql", "sqlite", "mariadb", "snowflake", "bigquery"])
+        or "database" in c_low
+        or "caching" in c_low
+    ):
         return "Databases & Caching"
-    if any(cd in n_low for cd in ["docker", "kubernetes", "eks", "gke", "terraform", "cdk", "gitlab", "github actions", "nginx", "helm", "aws", "gcp", "azure", "ci/cd", "container"]):
+    if (
+        any(cd in n_low for cd in ["docker", "kubernetes", "eks", "gke", "terraform", "cdk", "gitlab", "github actions", "nginx", "helm", "aws", "gcp", "azure", "ci/cd", "container"])
+        or any(k in c_low for k in ["devops", "cloud", "infrastructure as code", "ci/cd", "container"])
+    ):
         return "Cloud & DevOps"
-    if any(obs in n_low for obs in ["prometheus", "grafana", "loki", "tempo", "sentry", "git", "pytest", "datadog", "cloudwatch", "testing", "jest"]):
+    if (
+        any(obs in n_low for obs in ["prometheus", "grafana", "loki", "tempo", "sentry", "git", "pytest", "datadog", "cloudwatch", "testing", "jest", "cypress", "playwright"])
+        or any(k in c_low for k in ["observab", "version control", "testing"])
+    ):
         return "Observability & Tools"
-    if "devops" in c_low or "cloud" in c_low:
-        return "Cloud & DevOps"
-    if "observab" in c_low or "tool" in c_low or "test" in c_low:
-        return "Observability & Tools"
-    return "Frameworks & Backend"
+    if (
+        any(fw in n_low for fw in ["django", "fastapi", "flask", "spring", "express", "react", "next.js", "vue", "angular", "svelte", "celery", "node", "graphql", "grpc", "restful", "websocket", "ingestion pipeline", "microservice", "pandas", "numpy", "pytorch", "tensorflow", "scikit"])
+        or any(k in c_low for k in ["framework", "libraries", "library", "backend", "frontend", "apis", "api ", "messaging"])
+    ):
+        return "Frameworks & Backend"
+
+    if c_clean:
+        return c_clean
+    return "Skills"
 
 
 def consolidate_raw_latex_skills(text: str) -> str:
     pattern = re.compile(
-        r"(\\section\{Technical Skills\}\s*\\begin\{itemize\}(?:\[[^\]]*\])?\s*\\small\{\\item\{)(.*?)(\}\}\s*\\end\{itemize\})",
+        r"(\\section\{(?:Technical )?Skills\}\s*\\begin\{itemize\}(?:\[[^\]]*\])?\s*\\small\{\\item\{)(.*?)(\}\}\s*\\end\{itemize\})",
         re.DOTALL
     )
     def replacer(m):
@@ -272,6 +301,7 @@ def consolidate_raw_latex_skills(text: str) -> str:
         seen: Set[str] = set()
 
         for cat_title, items_str in matches:
+            cat_title_clean = cat_title.replace(r"\&", "&").strip()
             # Clean potential period typo e.g. "Redis. Redis Pub/Sub"
             items_str = re.sub(r"\.\s+", ", ", items_str)
             parts = [p.strip().rstrip(".") for p in re.split(r"[,;]+", items_str) if p.strip()]
@@ -283,15 +313,19 @@ def consolidate_raw_latex_skills(text: str) -> str:
                 if p_id in seen:
                     continue
                 seen.add(p_id)
-                target = classify_skill_item(cat_title, p_norm)
-                categorized[target].append(p_norm)
+                target = classify_skill_item(cat_title_clean, p_norm)
+                categorized.setdefault(target, []).append(p_norm)
 
         # Streamline Cloud & DevOps line (eliminate duplicate Kubernetes and redundant generic clouds)
-        categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
+        if categorized.get("Cloud & DevOps"):
+            categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
 
+        ordered_cats = list(CANONICAL_SKILL_CATEGORIES) + [
+            c for c in categorized.keys() if c not in CANONICAL_SKILL_CATEGORIES
+        ]
         cat_strings = []
-        for cat in CANONICAL_SKILL_CATEGORIES:
-            items = categorized[cat]
+        for cat in ordered_cats:
+            items = categorized.get(cat, [])
             if items:
                 cat_tex = cat.replace("&", r"\&")
                 cat_strings.append(f"\\textbf{{{cat_tex}}}{{: " + ", ".join(items) + "}")
@@ -303,7 +337,7 @@ def consolidate_raw_latex_skills(text: str) -> str:
 
 
 def consolidate_skills_to_latex(skills: List[Dict[str, Any]]) -> str:
-    """Consolidates skills list into exactly 5 compact, non-duplicate LaTeX lines."""
+    """Consolidates skills list into compact, non-duplicate LaTeX lines grouped by category."""
     if not skills:
         return ""
 
@@ -326,14 +360,18 @@ def consolidate_skills_to_latex(skills: List[Dict[str, Any]]) -> str:
                 continue
             seen_ids.add(sub_id)
             target_cat = classify_skill_item(cat_hint, sub_norm)
-            categorized[target_cat].append(escape_latex(sub_norm))
+            categorized.setdefault(target_cat, []).append(escape_latex(sub_norm))
 
-    # Streamline Cloud & DevOps line
-    categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
+    # Streamline Cloud & DevOps line if present
+    if categorized.get("Cloud & DevOps"):
+        categorized["Cloud & DevOps"] = streamline_cloud_devops_items(categorized["Cloud & DevOps"])
 
+    ordered_cats = list(CANONICAL_SKILL_CATEGORIES) + [
+        c for c in categorized.keys() if c not in CANONICAL_SKILL_CATEGORIES
+    ]
     cat_strings = []
-    for cat in CANONICAL_SKILL_CATEGORIES:
-        items = categorized[cat]
+    for cat in ordered_cats:
+        items = categorized.get(cat, [])
         if items:
             cat_tex = escape_latex(cat)
             cat_strings.append(f"\\textbf{{{cat_tex}}}{{: " + ", ".join(items) + "}")

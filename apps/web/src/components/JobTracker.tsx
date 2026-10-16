@@ -66,6 +66,13 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const [editableLatex, setEditableLatex] = useState('');
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
 
+  // AI LaTeX Assistant state
+  const [aiEditOpen, setAiEditOpen] = useState(false);
+  const [aiEditTargetSection, setAiEditTargetSection] = useState<'all' | 'summary' | 'experience' | 'projects' | 'skills'>('all');
+  const [aiEditInstruction, setAiEditInstruction] = useState('');
+  const [aiEditing, setAiEditing] = useState(false);
+  const [aiEditSummary, setAiEditSummary] = useState<string | null>(null);
+
   const loadJobs = async () => {
     setLoading(true);
     try {
@@ -92,6 +99,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
 
   const handleSelectJob = async (job: JobApplication) => {
     setOperationError(null);
+    setAiEditSummary(null);
     try {
       const detail = await api.getJobDetail(job.id);
       setSelectedJob(detail);
@@ -155,6 +163,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       return;
     }
     setOperationError(null);
+    setAiEditSummary(null);
     setTailoring(true);
     try {
       await api.tailorJob(selectedJob.id);
@@ -168,6 +177,45 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       setOperationError(err instanceof Error ? err.message : 'Tailoring failed.');
     } finally {
       setTailoring(false);
+    }
+  };
+
+  const handleRunAiEditLatex = async (customInstruction?: string, customSection?: 'all' | 'summary' | 'experience' | 'projects' | 'skills') => {
+    if (!selectedJob) return;
+    const instruction = (customInstruction ?? aiEditInstruction).trim();
+    if (!instruction) return;
+    const targetSection = customSection ?? aiEditTargetSection;
+    const doc = selectedJob.documents?.find((d) => d.doc_type === activeDocType);
+
+    setAiEditing(true);
+    setOperationError(null);
+    try {
+      let res: {
+        status: string;
+        latex_source: string;
+        changes_summary: string;
+        keyword_coverage?: any;
+      };
+      if (doc) {
+        res = await api.aiEditDocumentLatex(doc.id, instruction, {
+          latex_source: editableLatex,
+          target_section: targetSection,
+        });
+      } else {
+        res = await api.aiEditCustomLatex(editableLatex, instruction, targetSection);
+      }
+      setEditableLatex(res.latex_source);
+      setAiEditSummary(res.changes_summary || 'Updated LaTeX document.');
+      if (!customInstruction) {
+        setAiEditInstruction('');
+      }
+      const detail = await api.getJobDetail(selectedJob.id);
+      setSelectedJob(detail);
+    } catch (err) {
+      console.error(err);
+      setOperationError(err instanceof Error ? err.message : 'AI LaTeX edit failed.');
+    } finally {
+      setAiEditing(false);
     }
   };
 
@@ -564,7 +612,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                     <div>
                       <p className="text-[13px] font-medium text-slate-800">Tailoring documents with {activeModel}</p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        Comparing the role requirements with your profile evidence. Keep this page open.
+                        Extracting JD requirements, matching your profile evidence by ID, and generating ATS-clean LaTeX.
                       </p>
                     </div>
                   </div>
@@ -601,15 +649,89 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   </details>
                 )}
 
-                {selectedJob.extracted_keywords && selectedJob.extracted_keywords.length > 0 && (
-                  <div>
-                    <p className="group-label mb-2">Role keywords</p>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedJob.extracted_keywords.slice(0, 12).map((keyword) => (
-                        <span key={keyword} className="chip">{keyword}</span>
+                {selectedJob.keyword_coverage ? (
+                  <div className="rounded border border-slate-200 bg-slate-50/70 p-3.5 space-y-3 dark:border-slate-800 dark:bg-slate-900/50">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          JD Keyword Coverage
+                        </span>
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                          {selectedJob.keyword_coverage.coverage_pct}% in resume
+                        </span>
+                      </div>
+                      {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={aiEditing}
+                          onClick={() => {
+                            setAiEditOpen(true);
+                            handleRunAiEditLatex(
+                              `Naturally weave these skills from my profile into the Skills section or relevant Experience/Project bullets: ${selectedJob.keyword_coverage?.missing_in_resume_but_in_profile.join(', ')}`,
+                              'all',
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+                        >
+                          {aiEditing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                          Weave {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length} profile skill
+                          {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length === 1 ? '' : 's'} into resume
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedJob.keyword_coverage.matched_keywords.map((kw) => (
+                        <span
+                          key={`matched-${kw}`}
+                          className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                          title="Present in tailored resume"
+                        >
+                          <Check className="h-3 w-3 text-emerald-600" />
+                          {kw}
+                        </span>
+                      ))}
+                      {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.map((kw) => (
+                        <button
+                          key={`profile-missing-${kw}`}
+                          type="button"
+                          disabled={aiEditing}
+                          onClick={() => {
+                            setAiEditOpen(true);
+                            handleRunAiEditLatex(
+                              `Weave "${kw}" (which is in my profile) into the Skills section and relevant experience bullets.`,
+                              'all',
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                          title="In your master profile but missing from this resume — click to weave in"
+                        >
+                          + {kw} (in profile)
+                        </button>
+                      ))}
+                      {selectedJob.keyword_coverage.missing_keywords.map((kw) => (
+                        <span
+                          key={`missing-${kw}`}
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-400"
+                          title="Not found in your master profile"
+                        >
+                          {kw}
+                        </span>
                       ))}
                     </div>
                   </div>
+                ) : (
+                  selectedJob.extracted_keywords &&
+                  selectedJob.extracted_keywords.length > 0 && (
+                    <div>
+                      <p className="group-label mb-2">Role keywords</p>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedJob.extracted_keywords.slice(0, 14).map((keyword) => (
+                          <span key={keyword} className="chip">{keyword}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )
                 )}
 
                 {activeDoc?.tailoring_rationale && (
@@ -653,7 +775,17 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={aiEditOpen ? 'primary' : 'outline'}
+                        onClick={() => setAiEditOpen((open) => !open)}
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                        AI Edit LaTeX
+                      </Button>
+
+                      <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
                         <button
                           onClick={() => setViewMode('preview')}
                           className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
@@ -674,8 +806,118 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                         >
                           <FileCode className="h-3.5 w-3.5" /> Source
                         </button>
+                      </div>
                     </div>
                   </div>
+
+                  {/* AI LaTeX Assistant Drawer */}
+                  {aiEditOpen && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3 dark:border-slate-800 dark:bg-slate-900/70">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Wand2 className="h-4 w-4 text-slate-600" />
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                            AI LaTeX Assistant ({activeModel})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-slate-500 mr-1">Target section:</span>
+                          {(['all', 'summary', 'experience', 'projects', 'skills'] as const).map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => setAiEditTargetSection(sec)}
+                              className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
+                                aiEditTargetSection === sec
+                                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                  : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300'
+                              }`}
+                            >
+                              {sec}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          {
+                            label: 'Tighten to fit 1 page',
+                            instruction: 'Condense verbose bullets across Experience and Projects so the entire resume fits cleanly on 1 page without losing metrics or JD keywords.',
+                            section: 'all' as const,
+                          },
+                          {
+                            label: 'Strengthen impact & metrics',
+                            instruction: 'Rewrite bullets with stronger action verbs and foreground measurable outcomes, scope, and domain impact.',
+                            section: 'experience' as const,
+                          },
+                          {
+                            label: 'Sharpen summary for this JD',
+                            instruction: 'Rewrite the Professional Summary to directly align my core experience and strengths with this target role in 2-3 high-impact sentences.',
+                            section: 'summary' as const,
+                          },
+                          {
+                            label: 'Reorganize skills by JD priority',
+                            instruction: 'Reorder and group the Skills section so the most relevant qualifications and skills for this job appear first in each category.',
+                            section: 'skills' as const,
+                          },
+                        ].map((preset) => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            disabled={aiEditing}
+                            onClick={() => {
+                              setAiEditTargetSection(preset.section);
+                              handleRunAiEditLatex(preset.instruction, preset.section);
+                            }}
+                            className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            ✦ {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={aiEditInstruction}
+                          onChange={(e) => setAiEditInstruction(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleRunAiEditLatex();
+                            }
+                          }}
+                          disabled={aiEditing}
+                          placeholder={`Ask AI to edit ${aiEditTargetSection === 'all' ? 'the LaTeX document' : `the ${aiEditTargetSection} section`} (e.g., "Highlight leadership and relevant domain experience in my most recent role")...`}
+                          className="field-input flex-1 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleRunAiEditLatex()}
+                          disabled={aiEditing || !aiEditInstruction.trim()}
+                        >
+                          {aiEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                          {aiEditing ? 'Applying…' : 'Apply AI edit'}
+                        </Button>
+                      </div>
+
+                      {aiEditSummary && (
+                        <div className="flex items-center justify-between gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                          <span>
+                            <strong>AI updated LaTeX:</strong> {aiEditSummary}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAiEditSummary(null)}
+                            className="text-emerald-700 hover:text-emerald-950"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Body: Preview Mode vs Code Mode */}
                   {viewMode === 'preview' ? (

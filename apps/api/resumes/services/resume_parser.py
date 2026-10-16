@@ -22,7 +22,7 @@ from .latex_templates import normalize_unicode_and_latex_text
 
 logger = logging.getLogger(__name__)
 
-PARSE_SYSTEM_PROMPT = """You are an expert AI resume parser.
+PARSE_SYSTEM_PROMPT = """You are an expert AI resume parser for candidates of any profession (healthcare, nursing, medicine, visual & performing arts, education, business, finance, trades, science, or engineering).
 Your task is to turn the candidate resume into a clean structured JSON object with one entry per section.
 
 Rules:
@@ -31,14 +31,15 @@ Rules:
 - Parse every visible section: profile, experiences, education, skills, projects, certifications.
 - Separate every visible experience or project bullet into its own list item. Keep all metrics, achievements, and facts.
 - Preserve wording and facts. Extract existing numbers and scope, but do not rewrite, embellish, infer metrics, or merge facts from different roles.
-- For skills: Every individual skill must be its own object in the skills array (e.g. name: "Python", name: "Scala"). Never lump multiple skills together into one comma-separated name.
-- Split skills into relevant categories such as Languages, Frameworks, Cloud & DevOps, Databases, Tools, Observability, or Leadership.
-- Distinguish employment, projects, education, certifications, and skills using headings and nearby dates.
+- For skills: Every individual skill must be its own object in the skills array (e.g. name: "Patient Triage", name: "Oil Painting", name: "Financial Modeling", or name: "Python"). Never lump multiple skills together into one comma-separated name.
+- Group skills into categories appropriate to the candidate's field (e.g., Clinical Skills, Medical Equipment, Fine Arts & Media, Financial Analysis, Languages, Tools & Software, Leadership, or Technical Skills).
+- In `technologies` for experiences and projects, extract relevant tools, instruments, methods, media, equipment, or technologies mentioned in that entry.
+- Distinguish employment/clinical rotations/residencies, projects/exhibitions/portfolios, education, certifications/licenses, and skills using headings and nearby dates.
 - Associate each bullet only with its nearest role, project, or education entry.
 - Treat "Present", "Current", or an open-ended latest role as is_current=true.
 - Treat freelance, self-employed, consulting, and independent-contract work as ONE experience entry, not as separate jobs or standalone portfolio projects.
 - Put every freelance client engagement in that experience's client_projects list. Preserve the client and project names when stated, and keep each engagement's bullets and technologies separate.
-- Use the top-level projects section only for personal, open-source, academic, or portfolio projects that were not performed for a freelance client.
+- Use the top-level projects section only for personal, academic, research, exhibition, open-source, or portfolio projects that were not performed for a freelance client.
 - Never duplicate a freelance client engagement in both experiences and projects.
 - If a field is missing, set it to an empty string or empty array, not a placeholder like "N/A".
 - Keep names, titles, organizations, locations, dates, and contact fields concise. Do not put summaries, bullets, or multiple fields into them.
@@ -178,6 +179,73 @@ class ResumeParser:
             return text[:max_length]
         return text
 
+    @staticmethod
+    def extract_contact_and_links(raw_text: str) -> Dict[str, str]:
+        """Deterministically extract email, phone, LinkedIn, GitHub, website, and header name from raw text."""
+        extracted: Dict[str, str] = {}
+        if not raw_text:
+            return extracted
+
+        header_slice = raw_text[:2500]
+
+        # Extract candidate name from first markdown H1 if present
+        h1_match = re.search(r"^#\s+([A-Za-z][A-Za-z\s.\-']{2,60})$", header_slice, flags=re.MULTILINE)
+        if h1_match:
+            cand_name = h1_match.group(1).strip()
+            if cand_name.lower() not in {"resume", "curriculum vitae", "cv", "profile"}:
+                extracted["full_name"] = cand_name
+
+        # Email
+        email_match = re.search(
+            r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
+            header_slice,
+        )
+        if email_match:
+            extracted["email"] = email_match.group(0).strip()
+
+        # Phone
+        phone_match = re.search(
+            r"(?:\+?\d{1,3}[\s.\-]?)?(?:\(\d{3}\)|\b\d{3})[\s.\-]\d{3}[\s.\-]\d{4}\b",
+            header_slice,
+        )
+        if phone_match:
+            extracted["phone"] = phone_match.group(0).strip()
+
+        # Collect all URLs from markdown links and raw text
+        urls = []
+        for md_url in re.findall(r"\[[^\]]+\]\((https?://[^\s)]+|mailto:[^\s)]+)\)", raw_text):
+            urls.append(md_url.strip())
+        for raw_url in re.findall(
+            r"(?:https?://|www\.|(?:linkedin\.com/in/|github\.com/))[A-Za-z0-9._~:/?#\[\]@!$&'*+,;=%\-]+",
+             header_slice,
+            flags=re.IGNORECASE,
+        ):
+            cleaned_u = raw_url.rstrip(".,;:)]>")
+            if not cleaned_u.lower().startswith(("http://", "https://")):
+                cleaned_u = f"https://{cleaned_u}"
+            urls.append(cleaned_u)
+
+        for u in urls:
+            u_low = u.lower()
+            if u_low.startswith("mailto:"):
+                if "email" not in extracted:
+                    extracted["email"] = u[7:].split("?")[0].strip()
+                continue
+            if "linkedin.com/in/" in u_low and "linkedin_url" not in extracted:
+                extracted["linkedin_url"] = u
+            elif "github.com/" in u_low and "github_url" not in extracted:
+                # Prefer profile root or first github link in header
+                extracted["github_url"] = u
+            elif (
+                "website_url" not in extracted
+                and "linkedin.com" not in u_low
+                and "github.com" not in u_low
+                and any( u_ in header_slice for u_ in (u, u.replace("https://", ""), u.replace("http://", "")) )
+            ):
+                extracted["website_url"] = u
+
+        return extracted
+
     @classmethod
     def normalize_parsed_data(cls, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         cleaned = cls._normalize_value(parsed_data)
@@ -211,6 +279,25 @@ class ResumeParser:
                 items = []
             if not isinstance(items, list):
                 raise ValueError(f"Resume parser field '{key}' must be a list.")
+
+            # Expand grouped skill objects like {"category": "Languages", "skills": ["Python", "Go"]}
+            if key == "skills":
+                expanded_skills = []
+                for item in items:
+                    if isinstance(item, str):
+                        expanded_skills.append({"category": "Technical Skills", "name": item, "proficiency": ""})
+                    elif isinstance(item, dict):
+                        grouped_list = item.get("skills") or item.get("items") or item.get("names")
+                        if isinstance(grouped_list, list) and not item.get("name"):
+                            cat = item.get("category") or "Technical Skills"
+                            prof = item.get("proficiency") or ""
+                            for sub_skill in grouped_list:
+                                if isinstance(sub_skill, str) and sub_skill.strip():
+                                    expanded_skills.append({"category": cat, "name": sub_skill.strip(), "proficiency": prof})
+                        else:
+                            expanded_skills.append(item)
+                items = expanded_skills
+
             normalized_items = []
             seen = set()
             for item in items:
@@ -318,11 +405,20 @@ class ResumeParser:
         base_url: Optional[str] = None,
         ollama_service: Optional[OllamaService] = None,
     ) -> Dict[str, Any]:
-        """Use LLM (Ollama or OpenRouter) to extract structured data from raw resume text."""
+        """Use LLM (Ollama or OpenRouter) + deterministic pre-extraction to parse resume text."""
         ollama = ollama_service or OllamaService(base_url=base_url)
+        detected_contacts = cls.extract_contact_and_links(raw_text)
+        contact_hint = (
+            f"\nPre-detected contact/link signals (use if accurate):\n{json.dumps(detected_contacts, ensure_ascii=False)}\n"
+            if detected_contacts
+            else ""
+        )
         messages = [
             {"role": "system", "content": PARSE_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Parse the following resume into JSON:\n\n{raw_text[:20000]}"}
+            {
+                "role": "user",
+                "content": f"Parse the following resume into JSON:{contact_hint}\n\n{raw_text[:24000]}",
+            },
         ]
 
         parsed = ollama.chat_json_sync(
@@ -337,22 +433,43 @@ class ResumeParser:
                 raise ValueError(f"Ollama response field '{key}' must be a list.")
         if not isinstance(parsed["profile"], dict):
             raise ValueError("Ollama response field 'profile' must be an object.")
+
+        # Backfill any missing contact/link fields from deterministic regex extraction
+        for contact_field, detected_val in detected_contacts.items():
+            if detected_val and not str(parsed["profile"].get(contact_field, "") or "").strip():
+                parsed["profile"][contact_field] = detected_val
+
         return cls.normalize_parsed_data(parsed)
 
     @classmethod
-    def save_to_database(cls, user: User, parsed_data: Dict[str, Any], raw_text: str = ""):
-        """Merge normalized resume data without duplicating previously imported sections."""
+    def save_to_database(
+        cls,
+        user: User,
+        parsed_data: Dict[str, Any],
+        raw_text: str = "",
+        mode: str = "merge",
+    ):
+        """Save normalized resume data using either 'merge' or 'replace' mode."""
         parsed_data = cls.normalize_parsed_data(parsed_data)
         profile_data = parsed_data.get("profile", {})
+        is_replace = str(mode or "merge").strip().lower() == "replace"
+
         with transaction.atomic():
+            if is_replace:
+                user.experiences.all().delete()
+                user.educations.all().delete()
+                user.skills.all().delete()
+                user.projects.all().delete()
+                user.certifications.all().delete()
+
             profile, _ = Profile.objects.get_or_create(user=user)
             for field in (
                 "full_name", "headline", "email", "phone", "location",
                 "website_url", "linkedin_url", "github_url", "summary",
             ):
-                if profile_data.get(field):
-                    setattr(profile, field, profile_data[field])
-            if raw_text:
+                if is_replace or profile_data.get(field):
+                    setattr(profile, field, profile_data.get(field, ""))
+            if raw_text or is_replace:
                 profile.raw_resume_text = raw_text
             profile.save()
 

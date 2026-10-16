@@ -81,8 +81,11 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [refineTargetId, setRefineTargetId] = useState<number | null>(null);
   const [refineTargetKind, setRefineTargetKind] = useState<RefineTargetKind>('experience');
   const [refineTargetLabel, setRefineTargetLabel] = useState('Experience');
+  const [refineSectionContext, setRefineSectionContext] = useState<Record<string, unknown> | undefined>(undefined);
   const [refineOriginalContent, setRefineOriginalContent] = useState<unknown>(null);
   const [refineDraftContent, setRefineDraftContent] = useState<unknown>(null);
+  const [refineOriginalTech, setRefineOriginalTech] = useState<string[]>([]);
+  const [refineProposedTech, setRefineProposedTech] = useState<string[]>([]);
   const [refinePrompt, setRefinePrompt] = useState('');
   const [refining, setRefining] = useState(false);
   const [refineMessages, setRefineMessages] = useState<RefineMessage[]>([]);
@@ -111,9 +114,8 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [resetOpen, resetting]);
 
-  // New Experience Modal state
-  const [newExpOpen, setNewExpOpen] = useState(false);
-  const [newExp, setNewExp] = useState<Experience>({
+  // Experience Add/Edit state
+  const emptyExp: Experience = {
     company: '',
     role: '',
     location: '',
@@ -122,7 +124,50 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     is_current: false,
     bullet_points: [''],
     technologies: [],
-  });
+  };
+  const [newExpOpen, setNewExpOpen] = useState(false);
+  const [editingExpId, setEditingExpId] = useState<number | null>(null);
+  const [newExp, setNewExp] = useState<Experience>(emptyExp);
+
+  // Project Add/Edit state
+  const emptyProject: Project = {
+    title: '',
+    subtitle: '',
+    role: '',
+    repo_url: '',
+    live_url: '',
+    start_date: '',
+    end_date: '',
+    bullet_points: [''],
+    technologies: [],
+  };
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [newProject, setNewProject] = useState<Project>(emptyProject);
+
+  // Education Add/Edit state
+  const emptyEducation: Education = {
+    institution: '',
+    degree: '',
+    field_of_study: '',
+    start_date: '',
+    end_date: '',
+    gpa: '',
+    highlights: [''],
+  };
+  const [newEduOpen, setNewEduOpen] = useState(false);
+  const [editingEduId, setEditingEduId] = useState<number | null>(null);
+  const [newEdu, setNewEdu] = useState<Education>(emptyEducation);
+
+  // Certification Add state
+  const emptyCert: Certification = {
+    name: '',
+    issuer: '',
+    issue_date: '',
+    credential_url: '',
+  };
+  const [newCertOpen, setNewCertOpen] = useState(false);
+  const [newCert, setNewCert] = useState<Certification>(emptyCert);
 
   // New Skill Modal
   const [newSkillOpen, setNewSkillOpen] = useState(false);
@@ -146,26 +191,38 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     }
   };
 
-  const handleAddExperience = async () => {
-    if (!newExp.company || !newExp.role) return;
+  const handleSaveExperience = async () => {
+    if (!newExp.company.trim() || !newExp.role.trim()) return;
     try {
-      const cleanBullets = newExp.bullet_points.filter((b) => b.trim().length > 0);
-      await api.createExperience({ ...newExp, bullet_points: cleanBullets });
+      const cleanBullets = newExp.bullet_points.map((b) => b.trim()).filter((b) => b.length > 0);
+      const payload = { ...newExp, bullet_points: cleanBullets };
+      if (editingExpId) {
+        await api.updateExperience(editingExpId, payload);
+      } else {
+        await api.createExperience(payload);
+      }
       setNewExpOpen(false);
-      setNewExp({
-        company: '',
-        role: '',
-        location: '',
-        start_date: '',
-        end_date: '',
-        is_current: false,
-        bullet_points: [''],
-        technologies: [],
-      });
+      setEditingExpId(null);
+      setNewExp(emptyExp);
       onRefresh();
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleEditExperience = (exp: Experience) => {
+    setEditingExpId(exp.id || null);
+    setNewExp({
+      company: exp.company || '',
+      role: exp.role || '',
+      location: exp.location || '',
+      start_date: exp.start_date || '',
+      end_date: exp.end_date || '',
+      is_current: Boolean(exp.is_current),
+      bullet_points: exp.bullet_points?.length ? [...exp.bullet_points] : [''],
+      technologies: exp.technologies ? [...exp.technologies] : [],
+    });
+    setNewExpOpen(true);
   };
 
   const handleDeleteExperience = async (id?: number) => {
@@ -174,6 +231,108 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       await api.deleteExperience(id);
       onRefresh();
     }
+  };
+
+  const handleSaveProject = async () => {
+    if (!newProject.title.trim()) return;
+    try {
+      const cleanBullets = newProject.bullet_points.map((b) => b.trim()).filter((b) => b.length > 0);
+      const payload = { ...newProject, bullet_points: cleanBullets };
+      if (editingProjectId) {
+        await api.updateProject(editingProjectId, payload);
+      } else {
+        await api.createProject(payload);
+      }
+      setNewProjectOpen(false);
+      setEditingProjectId(null);
+      setNewProject(emptyProject);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditProject = (proj: Project) => {
+    setEditingProjectId(proj.id || null);
+    setNewProject({
+      title: proj.title || '',
+      subtitle: proj.subtitle || '',
+      role: proj.role || '',
+      repo_url: proj.repo_url || '',
+      live_url: proj.live_url || '',
+      start_date: proj.start_date || '',
+      end_date: proj.end_date || '',
+      bullet_points: proj.bullet_points?.length ? [...proj.bullet_points] : [''],
+      technologies: proj.technologies ? [...proj.technologies] : [],
+    });
+    setNewProjectOpen(true);
+  };
+
+  const handleDeleteProject = async (id?: number) => {
+    if (!id) return;
+    if (confirm('Delete this project?')) {
+      await api.deleteProject(id);
+      onRefresh();
+    }
+  };
+
+  const handleSaveEducation = async () => {
+    if (!newEdu.institution.trim() || !newEdu.degree.trim()) return;
+    try {
+      const cleanHighlights = newEdu.highlights.map((h) => h.trim()).filter((h) => h.length > 0);
+      const payload = { ...newEdu, highlights: cleanHighlights };
+      if (editingEduId) {
+        await api.updateEducation(editingEduId, payload);
+      } else {
+        await api.createEducation(payload);
+      }
+      setNewEduOpen(false);
+      setEditingEduId(null);
+      setNewEdu(emptyEducation);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditEducation = (edu: Education) => {
+    setEditingEduId(edu.id || null);
+    setNewEdu({
+      institution: edu.institution || '',
+      degree: edu.degree || '',
+      field_of_study: edu.field_of_study || '',
+      start_date: edu.start_date || '',
+      end_date: edu.end_date || '',
+      gpa: edu.gpa || '',
+      highlights: edu.highlights?.length ? [...edu.highlights] : [''],
+    });
+    setNewEduOpen(true);
+  };
+
+  const handleDeleteEducation = async (id?: number) => {
+    if (!id) return;
+    if (confirm('Delete this education entry?')) {
+      await api.deleteEducation(id);
+      onRefresh();
+    }
+  };
+
+  const handleAddCertification = async () => {
+    if (!newCert.name.trim()) return;
+    try {
+      await api.createCertification(newCert);
+      setNewCertOpen(false);
+      setNewCert(emptyCert);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteCertification = async (id?: number) => {
+    if (!id) return;
+    await api.deleteCertification(id);
+    onRefresh();
   };
 
   const handleAddSkill = async () => {
@@ -201,13 +360,19 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     label: string,
     content: unknown,
     starter: string,
+    sectionMeta?: Record<string, unknown>,
+    initialTechnologies?: string[],
   ) => {
     setRefineTargetKind(kind);
     setRefineSectionType(sectionType);
     setRefineTargetId(targetId);
     setRefineTargetLabel(label);
+    setRefineSectionContext(sectionMeta);
     setRefineOriginalContent(content);
     setRefineDraftContent(content);
+    const techs = initialTechnologies ? [...initialTechnologies] : [];
+    setRefineOriginalTech(techs);
+    setRefineProposedTech(techs);
     setRefinePrompt(starter);
     setRefineMessages([]);
     setRefineExplanation('');
@@ -224,7 +389,16 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       exp.id || null,
       `${exp.role} at ${exp.company}`,
       exp.bullet_points || [],
-      'Make these bullets more concise and impact-oriented without inventing metrics.',
+      'Strengthen these bullets with strong action verbs, clear domain expertise, and concrete impact without inventing metrics.',
+      {
+        role: exp.role,
+        company: exp.company,
+        location: exp.location,
+        start_date: exp.start_date,
+        end_date: exp.is_current ? 'Present' : exp.end_date,
+        technologies: exp.technologies || [],
+      },
+      exp.technologies || [],
     );
   };
 
@@ -235,7 +409,15 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       proj.id || null,
       proj.title,
       proj.bullet_points || [],
-      'Emphasize the project scope, technical decisions, and demonstrated impact.',
+      'Emphasize key contributions, methods or tools used, and measurable outcomes.',
+      {
+        title: proj.title,
+        subtitle: proj.subtitle,
+        role: proj.role,
+        technologies: proj.technologies || [],
+        repo_url: proj.repo_url,
+      },
+      proj.technologies || [],
     );
   };
 
@@ -246,7 +428,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       edu.id || null,
       `${edu.degree} at ${edu.institution}`,
       edu.highlights || [],
-      'Tighten these academic highlights into recruiter-friendly phrasing.',
+      'Tighten these academic highlights into concise, recruiter-friendly phrasing.',
+      {
+        institution: edu.institution,
+        degree: edu.degree,
+        field_of_study: edu.field_of_study,
+        gpa: edu.gpa,
+      },
     );
   };
 
@@ -257,7 +445,10 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       null,
       'Professional summary',
       profile.summary || '',
-      'Make this summary specific, concise, and supported by my existing claims.',
+      'Write a sharp, high-signal 2-3 sentence summary grounded in my experience, core strengths, and impact.',
+      {
+        headline: profile.headline,
+      },
     );
   };
 
@@ -268,7 +459,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
       null,
       'Skills inventory',
       context.skills.map(({ category, name, proficiency }) => ({ category, name, proficiency: proficiency || '' })),
-      'Reorganize these skills into clear categories and remove duplicates.',
+      'Reorganize my skills into clean categories suited to my profession, standardize naming, and surface any skills or tools from my experience and projects that are missing.',
     );
   };
 
@@ -284,23 +475,32 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
         issue_date: issue_date || '',
         credential_url: credential_url || '',
       })),
-      'Clean up this certification list. Do not add credentials I have not provided.',
+      'Clean up and standardize this certification list without adding credentials I have not provided.',
     );
   };
 
-  const handleRunAiRefine = async () => {
-    if (!refinePrompt.trim()) return;
-    const instruction = refinePrompt.trim();
+  const runRefineInstruction = async (instructionText: string) => {
+    const instruction = instructionText.trim();
+    if (!instruction) return;
     setRefineError(null);
     setRefining(true);
     try {
+      const contextWithTech =
+        refineTargetKind === 'experience' || refineTargetKind === 'project'
+          ? { ...(refineSectionContext || {}), technologies: refineProposedTech }
+          : refineSectionContext;
+
       const res = await api.refineSection(
         refineSectionType,
         refineDraftContent,
         instruction,
         refineMessages,
+        contextWithTech,
       );
       setRefineDraftContent(res.proposed_content);
+      if (Array.isArray(res.proposed_technologies) && res.proposed_technologies.length > 0) {
+        setRefineProposedTech(res.proposed_technologies);
+      }
       setRefineExplanation(res.explanation || '');
       setRefineMessages((current) => [
         ...current,
@@ -314,6 +514,10 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     } finally {
       setRefining(false);
     }
+  };
+
+  const handleRunAiRefine = async () => {
+    await runRefineInstruction(refinePrompt);
   };
 
   const handleApplyRefine = async () => {
@@ -333,21 +537,23 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
         if (!experience) throw new Error('Experience no longer exists.');
         await api.updateExperience(refineTargetId, {
           ...experience,
-          bullet_points: refineDraftContent as string[],
+          bullet_points: (refineDraftContent as string[]).map((b) => b.trim()).filter(Boolean),
+          technologies: refineProposedTech,
         });
       } else if (refineTargetKind === 'project' && refineTargetId) {
         const project = context.projects.find((item) => item.id === refineTargetId);
         if (!project) throw new Error('Project no longer exists.');
         await api.updateProject(refineTargetId, {
           ...project,
-          bullet_points: refineDraftContent as string[],
+          bullet_points: (refineDraftContent as string[]).map((b) => b.trim()).filter(Boolean),
+          technologies: refineProposedTech,
         });
       } else if (refineTargetKind === 'education' && refineTargetId) {
         const education = context.educations.find((item) => item.id === refineTargetId);
         if (!education) throw new Error('Education entry no longer exists.');
         await api.updateEducation(refineTargetId, {
           ...education,
-          highlights: refineDraftContent as string[],
+          highlights: (refineDraftContent as string[]).map((b) => b.trim()).filter(Boolean),
         });
       } else {
         throw new Error('This section is no longer available.');
@@ -394,7 +600,42 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   };
 
   const refineDiff = diffLines(contentItems(refineOriginalContent), contentItems(refineDraftContent));
-  const refineChangeCount = refineDiff.added + refineDiff.removed + refineDiff.changed;
+  const techChanged =
+    (refineTargetKind === 'experience' || refineTargetKind === 'project') &&
+    refineOriginalTech.join('|') !== refineProposedTech.join('|');
+  const refineChangeCount = refineDiff.added + refineDiff.removed + refineDiff.changed + (techChanged ? 1 : 0);
+
+  const quickPresetsByKind: Record<RefineTargetKind, string[]> = {
+    summary: [
+      'Write a punchy 2-3 sentence summary grounded in my experience and core strengths',
+      'Make it more concise and ATS-friendly without generic buzzwords',
+      'Emphasize leadership, domain expertise, and measurable impact',
+    ],
+    experience: [
+      'Strengthen action verbs, highlight scope & expertise, and keep every metric intact',
+      'Make bullets tighter (1-2 lines each) for a 1-page resume',
+      'Extract any tools, methods, or technologies mentioned in bullets into the tags list',
+      'Reorder bullets by strongest impact and outcomes first',
+    ],
+    project: [
+      'Highlight key contributions, methods or tools used, and concrete outcomes',
+      'Condense into 2-3 high-impact bullets suitable for a 1-page resume',
+      'Extract all tools, media, or technologies used into the project tags list',
+    ],
+    education: [
+      'Tighten academic coursework, clinical rotations, honors, and awards into concise bullets',
+      'Keep only the highest-signal academic highlights',
+    ],
+    skills: [
+      'Group into clean categories suited to my profession & remove duplicates',
+      'Add any missing skills, tools, or competencies mentioned in my experiences and projects',
+      'Standardize naming and capitalization across all skills',
+    ],
+    certifications: [
+      'Standardize certification and license names and issuer formatting',
+      'Remove duplicate credentials',
+    ],
+  };
 
   const skillGroups = useMemo(() => {
     const groups = new Map<string, Skill[]>();
@@ -648,7 +889,105 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
             )}
           </Panel>
 
-          <Panel title="Projects" icon={FolderGit2} count={context.projects.length}>
+          <Panel
+            title="Projects"
+            icon={FolderGit2}
+            count={context.projects.length}
+            actions={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingProjectId(null);
+                  setNewProject(emptyProject);
+                  setNewProjectOpen((open) => !open);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add
+              </Button>
+            }
+          >
+            {newProjectOpen && (
+              <div className="inline-form mb-4 space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Project title">
+                    <TextInput
+                      type="text"
+                      autoFocus
+                      placeholder="ResumeForge AI"
+                      value={newProject.title}
+                      onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Subtitle / Role">
+                    <TextInput
+                      type="text"
+                      placeholder="Creator & Lead Developer"
+                      value={newProject.subtitle || ''}
+                      onChange={(e) => setNewProject({ ...newProject, subtitle: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Repository URL">
+                    <TextInput
+                      type="text"
+                      placeholder="https://github.com/..."
+                      value={newProject.repo_url || ''}
+                      onChange={(e) => setNewProject({ ...newProject, repo_url: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Live URL">
+                    <TextInput
+                      type="text"
+                      placeholder="https://..."
+                      value={newProject.live_url || ''}
+                      onChange={(e) => setNewProject({ ...newProject, live_url: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <Field label="Highlights — one per line">
+                  <TextArea
+                    rows={3}
+                    value={newProject.bullet_points.join('\n')}
+                    onChange={(e) => setNewProject({ ...newProject, bullet_points: e.target.value.split('\n') })}
+                    placeholder={'Built an end-to-end LaTeX resume tailoring engine\nReduced compilation latency by 40%'}
+                  />
+                </Field>
+                <Field label="Technologies — comma separated">
+                  <TextInput
+                    type="text"
+                    placeholder="TypeScript, React, Django, PostgreSQL"
+                    value={newProject.technologies.join(', ')}
+                    onChange={(e) =>
+                      setNewProject({
+                        ...newProject,
+                        technologies: e.target.value
+                          .split(',')
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                </Field>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setNewProjectOpen(false);
+                      setEditingProjectId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleSaveProject} disabled={!newProject.title.trim()}>
+                    {editingProjectId ? 'Update project' : 'Save project'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {context.projects.length === 0 ? (
               <EmptyState
                 title="No projects yet"
@@ -665,18 +1004,37 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       </div>
                       <RowActions>
                         <RefineButton onClick={() => openAiRefineForProject(proj)} />
+                        <button
+                          type="button"
+                          onClick={() => handleEditProject(proj)}
+                          className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        >
+                          Edit
+                        </button>
+                        <IconButton
+                          tone="danger"
+                          onClick={() => handleDeleteProject(proj.id)}
+                          aria-label={`Delete ${proj.title}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconButton>
                       </RowActions>
                     </div>
 
                     {proj.bullet_points && proj.bullet_points.length > 0 && (
-                      <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-600">
-                        {proj.bullet_points.filter(Boolean)[0]}
-                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {proj.bullet_points.filter(Boolean).map((bullet, idx) => (
+                          <li key={idx} className="flex gap-2 text-xs leading-relaxed text-slate-600">
+                            <span className="bullet-dot" />
+                            <span>{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
 
                     {proj.technologies && proj.technologies.length > 0 && (
                       <div className="mt-2.5 flex flex-wrap gap-1">
-                        {proj.technologies.slice(0, 6).map((tech) => (
+                        {proj.technologies.map((tech) => (
                           <span key={tech} className="chip">
                             {tech}
                           </span>
@@ -708,34 +1066,100 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
             title="Certifications"
             icon={Award}
             count={context.certifications.length}
-            actions={<RefineButton onClick={openAiRefineForCertifications} />}
+            actions={
+              <>
+                <RefineButton onClick={openAiRefineForCertifications} />
+                <IconButton onClick={() => setNewCertOpen((open) => !open)} aria-label="Add certification">
+                  <Plus className="h-4 w-4" />
+                </IconButton>
+              </>
+            }
           >
+            {newCertOpen && (
+              <div className="inline-form mb-4 space-y-3">
+                <Field label="Certification name">
+                  <TextInput
+                    type="text"
+                    autoFocus
+                    placeholder="AWS Certified Solutions Architect"
+                    value={newCert.name}
+                    onChange={(e) => setNewCert({ ...newCert, name: e.target.value })}
+                  />
+                </Field>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Issuer">
+                    <TextInput
+                      type="text"
+                      placeholder="Amazon Web Services"
+                      value={newCert.issuer || ''}
+                      onChange={(e) => setNewCert({ ...newCert, issuer: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Issue date">
+                    <TextInput
+                      type="text"
+                      placeholder="2025"
+                      value={newCert.issue_date || ''}
+                      onChange={(e) => setNewCert({ ...newCert, issue_date: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <Field label="Credential URL (optional)">
+                  <TextInput
+                    type="text"
+                    placeholder="https://..."
+                    value={newCert.credential_url || ''}
+                    onChange={(e) => setNewCert({ ...newCert, credential_url: e.target.value })}
+                  />
+                </Field>
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setNewCertOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" onClick={handleAddCertification} disabled={!newCert.name.trim()}>
+                    Add credential
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {context.certifications.length === 0 ? (
               <EmptyState
                 title="No certifications yet"
-                hint="Open Refine and describe the credential in chat — the AI will add it to your profile."
+                hint="Add a credential directly or open Refine to clean up your certifications."
               />
             ) : (
               <div className="space-y-2">
                 {context.certifications.map((certification) => (
                   <div
                     key={certification.id ?? `${certification.name}-${certification.issuer}`}
-                    className="entry-card"
+                    className="entry-card group flex items-start justify-between gap-2"
                   >
-                    <p className="text-[13px] font-semibold text-slate-900">{certification.name}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {[certification.issuer, certification.issue_date].filter(Boolean).join(' · ') ||
-                        'No issuer recorded'}
-                    </p>
-                    {certification.credential_url && (
-                      <a
-                        href={certification.credential_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="entry-link mt-1.5"
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-900">{certification.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {[certification.issuer, certification.issue_date].filter(Boolean).join(' · ') ||
+                          'No issuer recorded'}
+                      </p>
+                      {certification.credential_url && (
+                        <a
+                          href={certification.credential_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="entry-link mt-1.5"
+                        >
+                          <ExternalLink className="h-3 w-3" /> View credential
+                        </a>
+                      )}
+                    </div>
+                    {certification.id && (
+                      <IconButton
+                        tone="danger"
+                        onClick={() => handleDeleteCertification(certification.id)}
+                        aria-label={`Delete ${certification.name}`}
                       >
-                        <ExternalLink className="h-3 w-3" /> View credential
-                      </a>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </IconButton>
                     )}
                   </div>
                 ))}
@@ -751,7 +1175,15 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
             icon={Briefcase}
             count={context.experiences.length}
             actions={
-              <Button size="sm" variant="outline" onClick={() => setNewExpOpen((open) => !open)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingExpId(null);
+                  setNewExp(emptyExp);
+                  setNewExpOpen((open) => !open);
+                }}
+              >
                 <Plus className="h-3.5 w-3.5" /> Add
               </Button>
             }
@@ -843,15 +1275,22 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 </Field>
 
                 <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setNewExpOpen(false)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setNewExpOpen(false);
+                      setEditingExpId(null);
+                    }}
+                  >
                     Cancel
                   </Button>
                   <Button
                     size="sm"
-                    onClick={handleAddExperience}
+                    onClick={handleSaveExperience}
                     disabled={!newExp.company.trim() || !newExp.role.trim()}
                   >
-                    Save experience
+                    {editingExpId ? 'Update experience' : 'Save experience'}
                   </Button>
                 </div>
               </div>
@@ -888,6 +1327,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                         </div>
                         <RowActions>
                           <RefineButton onClick={() => openAiRefineForExp(exp)} />
+                          <button
+                            type="button"
+                            onClick={() => handleEditExperience(exp)}
+                            className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          >
+                            Edit
+                          </button>
                           <IconButton
                             tone="danger"
                             onClick={() => handleDeleteExperience(exp.id)}
@@ -925,7 +1371,101 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
             )}
           </Panel>
 
-          <Panel title="Education" icon={GraduationCap} count={context.educations.length}>
+          <Panel
+            title="Education"
+            icon={GraduationCap}
+            count={context.educations.length}
+            actions={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingEduId(null);
+                  setNewEdu(emptyEducation);
+                  setNewEduOpen((open) => !open);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add
+              </Button>
+            }
+          >
+            {newEduOpen && (
+              <div className="inline-form mb-4 space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Institution">
+                    <TextInput
+                      type="text"
+                      autoFocus
+                      placeholder="University of Waterloo"
+                      value={newEdu.institution}
+                      onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Degree">
+                    <TextInput
+                      type="text"
+                      placeholder="B.S. in Computer Science"
+                      value={newEdu.degree}
+                      onChange={(e) => setNewEdu({ ...newEdu, degree: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <Field label="Field of study">
+                    <TextInput
+                      type="text"
+                      placeholder="Computer Science"
+                      value={newEdu.field_of_study || ''}
+                      onChange={(e) => setNewEdu({ ...newEdu, field_of_study: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Dates">
+                    <TextInput
+                      type="text"
+                      placeholder="2018 – 2022"
+                      value={newEdu.end_date || ''}
+                      onChange={(e) => setNewEdu({ ...newEdu, end_date: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="GPA (optional)">
+                    <TextInput
+                      type="text"
+                      placeholder="3.9/4.0"
+                      value={newEdu.gpa || ''}
+                      onChange={(e) => setNewEdu({ ...newEdu, gpa: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <Field label="Highlights / Coursework — one per line">
+                  <TextArea
+                    rows={3}
+                    value={newEdu.highlights.join('\n')}
+                    onChange={(e) => setNewEdu({ ...newEdu, highlights: e.target.value.split('\n') })}
+                    placeholder={"Dean's Honors List\nRelevant Coursework: Distributed Systems, Compilers, Operating Systems"}
+                  />
+                </Field>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setNewEduOpen(false);
+                      setEditingEduId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveEducation}
+                    disabled={!newEdu.institution.trim() || !newEdu.degree.trim()}
+                  >
+                    {editingEduId ? 'Update education' : 'Save education'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {context.educations.length === 0 ? (
               <EmptyState
                 title="No education entries"
@@ -952,6 +1492,20 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       </div>
                       <RowActions>
                         <RefineButton onClick={() => openAiRefineForEducation(edu)} />
+                        <button
+                          type="button"
+                          onClick={() => handleEditEducation(edu)}
+                          className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        >
+                          Edit
+                        </button>
+                        <IconButton
+                          tone="danger"
+                          onClick={() => handleDeleteEducation(edu.id)}
+                          aria-label={`Delete ${edu.degree}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconButton>
                       </RowActions>
                     </div>
 
@@ -982,25 +1536,36 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               <div>
                 <div className="flex items-center gap-2 font-semibold text-slate-900">
                   <Wand2 className="h-5 w-5 text-slate-400" />
-                  <span>AI section chat</span>
+                  <span>AI section studio</span>
                   <span className="chip font-medium">{activeModel}</span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Editing <span className="font-semibold text-slate-700">{refineTargetLabel}</span> · nothing is saved until you confirm
+                  Editing <span className="font-semibold text-slate-700">{refineTargetLabel}</span> · you can ask AI or edit the working draft directly
                 </p>
               </div>
-              <button
-                onClick={() => setRefineModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                aria-label="Close AI section chat"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={refining}
+                  onClick={() => runRefineInstruction(quickPresetsByKind[refineTargetKind][0])}
+                >
+                  {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  Quick AI Enhance
+                </Button>
+                <button
+                  onClick={() => setRefineModalOpen(false)}
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Close AI section chat"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* Body */}
             <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-              {/* Left: draft + diff */}
+              {/* Left: editable draft + diff */}
               <div className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
                 <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                   <div className="flex items-center gap-1 rounded-lg bg-slate-200/70 p-0.5">
@@ -1011,7 +1576,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       }`}
                     >
                       <ListChecks className="h-3.5 w-3.5" />
-                      Working draft
+                      Working draft (editable)
                     </button>
                     <button
                       onClick={() => setRefinePanel('diff')}
@@ -1031,6 +1596,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                   <button
                     onClick={() => {
                       setRefineDraftContent(refineOriginalContent);
+                      setRefineProposedTech([...refineOriginalTech]);
                       setRefineMessages([]);
                       setRefineExplanation('');
                     }}
@@ -1040,25 +1606,140 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                   </button>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
                   {refinePanel === 'draft' ? (
-                    <ul className="space-y-2 text-sm text-slate-700">
-                      {contentItems(refineDraftContent).length === 0 ? (
-                        <li className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
-                          No entries yet. Ask the AI to draft some.
-                        </li>
+                    <>
+                      {refineTargetKind === 'summary' ? (
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-slate-600">
+                            Summary text (editable)
+                          </label>
+                          <textarea
+                            rows={6}
+                            value={String(refineDraftContent || '')}
+                            onChange={(e) => setRefineDraftContent(e.target.value)}
+                            className="field-textarea text-sm leading-relaxed"
+                            placeholder="Write or refine your professional summary..."
+                          />
+                        </div>
+                      ) : refineTargetKind === 'experience' ||
+                        refineTargetKind === 'project' ||
+                        refineTargetKind === 'education' ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-slate-600">
+                              Bullet points ({Array.isArray(refineDraftContent) ? refineDraftContent.length : 0})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRefineDraftContent([
+                                  ...(Array.isArray(refineDraftContent) ? (refineDraftContent as string[]) : []),
+                                  '',
+                                ])
+                              }
+                              className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                            >
+                              <Plus className="h-3 w-3" /> Add bullet
+                            </button>
+                          </div>
+                          {(!Array.isArray(refineDraftContent) || refineDraftContent.length === 0) ? (
+                            <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
+                              No bullets yet. Click &ldquo;Quick AI Enhance&rdquo; or add a bullet manually.
+                            </p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {(refineDraftContent as string[]).map((item, idx) => (
+                                <li
+                                  key={idx}
+                                  className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-2"
+                                >
+                                  <span className="mt-1.5 text-[11px] font-semibold text-slate-400 w-4 text-center">
+                                    {idx + 1}
+                                  </span>
+                                  <textarea
+                                    rows={2}
+                                    value={item}
+                                    onChange={(e) => {
+                                      const next = [...(refineDraftContent as string[])];
+                                      next[idx] = e.target.value;
+                                      setRefineDraftContent(next);
+                                    }}
+                                    className="flex-1 resize-y rounded border border-transparent px-1.5 py-1 text-xs leading-relaxed text-slate-800 focus:border-slate-300 focus:outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const next = (refineDraftContent as string[]).filter((_, i) => i !== idx);
+                                      setRefineDraftContent(next);
+                                    }}
+                                    className="mt-1 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                    aria-label={`Remove bullet ${idx + 1}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {(refineTargetKind === 'experience' || refineTargetKind === 'project') && (
+                            <div className="border-t border-slate-200 pt-3 space-y-1.5">
+                              <label className="text-xs font-medium text-slate-600">
+                                Technologies for this {refineTargetKind} (comma separated)
+                              </label>
+                              <TextInput
+                                type="text"
+                                value={refineProposedTech.join(', ')}
+                                onChange={(e) =>
+                                  setRefineProposedTech(
+                                    e.target.value
+                                      .split(',')
+                                      .map((t) => t.trim())
+                                      .filter(Boolean),
+                                  )
+                                }
+                                placeholder="Python, TypeScript, PostgreSQL, Docker..."
+                              />
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        contentItems(refineDraftContent).map((item, idx) => (
-                          <li
-                            key={`${item}-${idx}`}
-                            className="flex gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 leading-relaxed"
-                          >
-                            <span className="mt-0.5 text-[11px] font-semibold text-slate-400">{idx + 1}</span>
-                            <span>{item}</span>
-                          </li>
-                        ))
+                        <ul className="space-y-2 text-sm text-slate-700">
+                          {contentItems(refineDraftContent).length === 0 ? (
+                            <li className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
+                              No entries yet. Ask the AI to draft some.
+                            </li>
+                          ) : (
+                            contentItems(refineDraftContent).map((item, idx) => (
+                              <li
+                                key={`${item}-${idx}`}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[11px] font-semibold text-slate-400">{idx + 1}</span>
+                                  <span className="truncate">{item}</span>
+                                </div>
+                                {Array.isArray(refineDraftContent) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setRefineDraftContent(
+                                        (refineDraftContent as unknown[]).filter((_, i) => i !== idx),
+                                      )
+                                    }
+                                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                    aria-label="Remove item"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </li>
+                            ))
+                          )}
+                        </ul>
                       )}
-                    </ul>
+                    </>
                   ) : (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
@@ -1067,6 +1748,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                         <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-700">{refineDiff.changed} reworded</span>
                         <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">{refineDiff.unchanged} unchanged</span>
                       </div>
+
+                      {techChanged && (
+                        <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-950">
+                          <p className="font-semibold text-indigo-800">Technologies updated:</p>
+                          <p className="mt-0.5">{refineProposedTech.join(', ') || 'None'}</p>
+                        </div>
+                      )}
 
                       {refineChangeCount === 0 ? (
                         <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
@@ -1149,11 +1837,10 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               <div className="flex min-h-0 flex-col">
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">
                   {refineMessages.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500">
-                      <p className="font-semibold text-slate-700">Start a conversation</p>
-                      <p className="mt-1 leading-relaxed">
-                        Ask the AI to add, remove, reorder, or rewrite entries. Every reply updates the working draft, and
-                        the <strong>Diff vs saved</strong> tab shows exactly what will change.
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500 space-y-2">
+                      <p className="font-semibold text-slate-700">AI Context-Aware Editor</p>
+                      <p className="leading-relaxed">
+                        The AI has full context of your profile, skills, and role metadata. Click a preset below to run immediately, or type custom instructions (e.g., &ldquo;Highlight patient care outcomes and leadership&rdquo; or &ldquo;Make these bullets more concise&rdquo;).
                       </p>
                     </div>
                   ) : (
@@ -1187,13 +1874,15 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
                 <div className="space-y-2 border-t border-slate-200 bg-white p-4">
                   <div className="flex flex-wrap gap-1.5">
-                    {['Remove weak bullets', 'Make it concise', 'Add this new fact:', 'Reorder by impact'].map((chip) => (
+                    {quickPresetsByKind[refineTargetKind].map((chip) => (
                       <button
                         key={chip}
-                        onClick={() => setRefinePrompt(chip)}
-                        className="rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-700 transition-colors hover:bg-slate-200"
+                        type="button"
+                        disabled={refining}
+                        onClick={() => runRefineInstruction(chip)}
+                        className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-left text-[11px] text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50"
                       >
-                        {chip}
+                        ✦ {chip}
                       </button>
                     ))}
                   </div>
@@ -1208,7 +1897,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       }
                     }}
                     className="field-input resize-none"
-                    placeholder="Remove the second bullet, add this fact, or revise the current draft..."
+                    placeholder="Ask AI to rewrite, condense, or add a specific achievement..."
                   />
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400">Ctrl/⌘ + Enter to send</span>
@@ -1218,7 +1907,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       disabled={refining || !refinePrompt.trim()}
                     >
                       {refining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Send
+                      Send instruction
                     </Button>
                   </div>
                 </div>

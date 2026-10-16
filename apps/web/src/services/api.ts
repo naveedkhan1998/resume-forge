@@ -65,6 +65,7 @@ export const api = {
     currentContent: unknown,
     instruction: string,
     conversation: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    sectionContext?: Record<string, unknown>,
   ) {
     const res = await fetch(`${API_BASE}/ai/refine-section`, {
       method: 'POST',
@@ -74,6 +75,7 @@ export const api = {
         current_content: currentContent,
         instruction,
         conversation,
+        section_context: sectionContext,
       }),
     });
     return handleResponse(res);
@@ -186,6 +188,31 @@ export const api = {
     return handleResponse(res);
   },
 
+  async createCertification(cert: Certification) {
+    const res = await fetch(`${API_BASE}/master/certifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cert),
+    });
+    return handleResponse(res);
+  },
+
+  async updateCertification(id: number, cert: Certification) {
+    const res = await fetch(`${API_BASE}/master/certifications/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cert),
+    });
+    return handleResponse(res);
+  },
+
+  async deleteCertification(id: number) {
+    const res = await fetch(`${API_BASE}/master/certifications/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(res);
+  },
+
   async replaceCertifications(certifications: Certification[]) {
     const res = await fetch(`${API_BASE}/master/certifications`, {
       method: 'PUT',
@@ -220,13 +247,23 @@ export const api = {
     return handleResponse(res);
   },
 
-  // Upload Resume
-  async uploadResume(file: File): Promise<ResumeUploadResult> {
+  // Upload & Parse Resume
+  async uploadResume(file: File, mode: 'merge' | 'replace' = 'merge'): Promise<ResumeUploadResult> {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('mode', mode);
     const res = await fetch(`${API_BASE}/resumes/upload`, {
       method: 'POST',
       body: formData,
+    });
+    return handleResponse<ResumeUploadResult>(res);
+  },
+
+  async parseResumeText(raw_text: string, mode: 'merge' | 'replace' = 'merge'): Promise<ResumeUploadResult> {
+    const res = await fetch(`${API_BASE}/resumes/parse-text`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_text, mode }),
     });
     return handleResponse<ResumeUploadResult>(res);
   },
@@ -354,5 +391,41 @@ export const api = {
     });
     return handleResponse<{ status: string; latex_source: string }>(res);
   },
+
+  async aiEditDocumentLatex(
+    docId: number,
+    instruction: string,
+    options?: { latex_source?: string; target_section?: string },
+  ): Promise<{
+    status: string;
+    latex_source: string;
+    changes_summary: string;
+    keyword_coverage?: any;
+  }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/ai-edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instruction,
+        latex_source: options?.latex_source,
+        target_section: options?.target_section || 'all',
+      }),
+    });
+    return handleResponse(res);
+  },
+
+  async aiEditCustomLatex(
+    latex_source: string,
+    instruction: string,
+    target_section = 'all',
+  ): Promise<{ status: string; latex_source: string; changes_summary: string }> {
+    const res = await fetch(`${API_BASE}/documents/ai-edit-latex`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latex_source, instruction, target_section }),
+    });
+    return handleResponse(res);
+  },
 };
+
 

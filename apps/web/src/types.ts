@@ -24,6 +24,7 @@ export interface ParsedResumeSummary {
 export interface ResumeUploadResult {
   status: string;
   message: string;
+  mode?: 'merge' | 'replace';
   markdown_text?: string;
   parsed_summary?: ParsedResumeSummary;
 }
@@ -105,6 +106,13 @@ export interface TailoredDocument {
   created_at: string;
 }
 
+export interface KeywordCoverage {
+  matched_keywords: string[];
+  missing_in_resume_but_in_profile: string[];
+  missing_keywords: string[];
+  coverage_pct: number;
+}
+
 export interface JobApplication {
   id: number;
   company_name: string;
@@ -114,6 +122,7 @@ export interface JobApplication {
   status: 'saved' | 'applied' | 'interviewing' | 'offer' | 'rejected';
   match_score?: number | null;
   extracted_keywords?: string[];
+  keyword_coverage?: KeywordCoverage | null;
   notes?: string;
   created_at: string;
   documents_count?: number;
@@ -128,3 +137,4 @@ export interface MasterContext {
   projects: Project[];
   certifications: Certification[];
 }
+

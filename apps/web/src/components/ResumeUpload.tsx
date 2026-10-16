@@ -44,6 +44,9 @@ const formatFileSize = (bytes: number) => {
 
 export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
+  const [pastedText, setPastedText] = useState('');
+  const [inputMode, setInputMode] = useState<'file' | 'text'>('file');
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,16 +86,21 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (inputMode === 'file' && !file) return;
+    if (inputMode === 'text' && !pastedText.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      setResult(await api.uploadResume(file));
+      if (inputMode === 'file' && file) {
+        setResult(await api.uploadResume(file, importMode));
+      } else {
+        setResult(await api.parseResumeText(pastedText, importMode));
+      }
     } catch (uploadError) {
       setError(
         uploadError instanceof Error
           ? uploadError.message
-          : 'Could not upload and parse this resume.',
+          : 'Could not parse and import this resume.',
       );
     } finally {
       setLoading(false);
@@ -130,79 +138,165 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <SectionHeader
         title="Import resume"
-        description="Turn an existing PDF, DOCX, or text résumé into editable profile data."
+        description="Turn an existing PDF, DOCX, TXT résumé, or pasted career notes into structured profile data."
       />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
         <Panel
-          title="Resume file"
+          title="Resume source"
           icon={FileText}
           className="lg:col-span-3"
-          bodyClassName="p-4 sm:p-5"
+          bodyClassName="p-4 sm:p-5 space-y-4"
+          actions={
+            <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode('file');
+                  setError(null);
+                  setResult(null);
+                }}
+                className={`result-tab ${inputMode === 'file' ? 'result-tab-active' : ''}`}
+              >
+                Upload file
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode('text');
+                  setError(null);
+                  setResult(null);
+                }}
+                className={`result-tab ${inputMode === 'text' ? 'result-tab-active' : ''}`}
+              >
+                Paste text / notes
+              </button>
+            </div>
+          }
         >
-          <label
-            htmlFor="resume-upload"
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={(event) => {
-              event.preventDefault();
-              if (event.currentTarget === event.target) setDragActive(false);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragActive(false);
-              if (!loading) selectFile(event.dataTransfer.files[0]);
-            }}
-            className={`upload-dropzone ${
-              dragActive ? 'upload-dropzone-active' : ''
-            } ${loading ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
-          >
-            <span className="upload-dropzone-icon">
-              {file ? <FileText className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
-            </span>
-            <span className="mt-3 text-[13px] font-semibold text-slate-800">
-              {dragActive ? 'Drop the file to select it' : 'Drop a resume here, or choose a file'}
-            </span>
-            <span className="mt-1 text-xs text-slate-500">PDF, DOCX, or TXT · up to 15 MB</span>
-            <input
-              id="resume-upload"
-              type="file"
-              accept=".pdf,.docx,.txt"
-              className="hidden"
-              onChange={(event) => {
-                selectFile(event.target.files?.[0]);
-                event.target.value = '';
-              }}
-              disabled={loading}
-            />
-          </label>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+            <div>
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Import mode</p>
+              <p className="text-[11px] text-slate-500">
+                {importMode === 'merge'
+                  ? 'Safely merges new entries and bullets into your existing profile.'
+                  : 'Replaces existing experience, education, skills, and project entries.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 rounded border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-950">
+              <button
+                type="button"
+                onClick={() => {
+                  setImportMode('merge');
+                  setResult(null);
+                }}
+                className={`result-tab ${importMode === 'merge' ? 'result-tab-active' : ''}`}
+              >
+                Merge
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImportMode('replace');
+                  setResult(null);
+                }}
+                className={`result-tab ${importMode === 'replace' ? 'result-tab-active' : ''}`}
+              >
+                Replace profile
+              </button>
+            </div>
+          </div>
 
-          {file && (
-            <div className="mt-3 flex items-center gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800">
-                <FileText className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-medium text-slate-800">{file.name}</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(file.size)}</p>
-              </div>
-              {!loading && (
-                <IconButton type="button" onClick={clearFile} aria-label="Remove selected file">
-                  <X className="h-4 w-4" />
-                </IconButton>
+          {inputMode === 'file' ? (
+            <>
+              <label
+                htmlFor="resume-upload"
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  if (event.currentTarget === event.target) setDragActive(false);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragActive(false);
+                  if (!loading) selectFile(event.dataTransfer.files[0]);
+                }}
+                className={`upload-dropzone ${
+                  dragActive ? 'upload-dropzone-active' : ''
+                } ${loading ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
+              >
+                <span className="upload-dropzone-icon">
+                  {file ? <FileText className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
+                </span>
+                <span className="mt-3 text-[13px] font-semibold text-slate-800">
+                  {dragActive ? 'Drop the file to select it' : 'Drop a resume here, or choose a file'}
+                </span>
+                <span className="mt-1 text-xs text-slate-500">PDF, DOCX, or TXT · up to 15 MB</span>
+                <input
+                  id="resume-upload"
+                  type="file"
+                  accept=".pdf,.docx,.txt"
+                  className="hidden"
+                  onChange={(event) => {
+                    selectFile(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                  disabled={loading}
+                />
+              </label>
+
+              {file && (
+                <div className="flex items-center gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+                    <FileText className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-slate-800">{file.name}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(file.size)}</p>
+                  </div>
+                  {!loading && (
+                    <IconButton type="button" onClick={clearFile} aria-label="Remove selected file">
+                      <X className="h-4 w-4" />
+                    </IconButton>
+                  )}
+                </div>
               )}
+            </>
+          ) : (
+            <div className="space-y-2">
+              <label htmlFor="paste-resume-text" className="field-label">
+                Paste resume text, LinkedIn profile export, or raw career notes
+              </label>
+              <textarea
+                id="paste-resume-text"
+                rows={10}
+                value={pastedText}
+                onChange={(event) => {
+                  setPastedText(event.target.value);
+                  setResult(null);
+                  setError(null);
+                }}
+                disabled={loading}
+                className="field-textarea font-mono text-xs leading-relaxed"
+                placeholder="Paste your full resume text, LinkedIn About + Experience sections, or raw bullet points about your roles, projects, education, and skills..."
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>AI will extract contacts, experiences, projects, education, and categorized skills.</span>
+                <span>{pastedText.length.toLocaleString()} chars</span>
+              </div>
             </div>
           )}
 
           {error && (
             <div
-              className="mt-3 flex items-start gap-3 rounded border border-rose-200 bg-rose-50 p-3 text-rose-700"
+              className="flex items-start gap-3 rounded border border-rose-200 bg-rose-50 p-3 text-rose-700"
               role="alert"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -214,18 +308,22 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           )}
 
           {loading ? (
-            <div className="mt-4 flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
               <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-slate-500" />
               <div>
                 <p className="text-[13px] font-medium text-slate-800">Reading and structuring your resume</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  Extracting text, identifying sections, and writing the parsed records to your profile.
+                  Pre-extracting contact links, parsing sections with AI, and {importMode === 'replace' ? 'updating' : 'merging'} your profile.
                 </p>
               </div>
             </div>
-          ) : file ? (
-            <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={handleUpload} disabled={!file || Boolean(result)}>
+          ) : (inputMode === 'file' ? Boolean(file) : Boolean(pastedText.trim())) ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleUpload}
+                disabled={(inputMode === 'file' ? !file : !pastedText.trim()) || Boolean(result)}
+              >
                 {result ? (
                   <>
                     <Check className="h-4 w-4" /> Imported
@@ -247,9 +345,9 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
         >
           <ol className="space-y-4">
             {[
-              ['Contact details', 'Name, headline, location, links, and summary.'],
-              ['Career history', 'Experience, education, projects, and certifications.'],
-              ['Skills', 'Named skills grouped into editable categories.'],
+              ['Deterministic + AI contacts', 'Regex link/contact extraction combined with AI summary & headline parsing.'],
+              ['Career history', 'Experience, education, projects, and certifications with preserved bullets & metrics.'],
+              ['Categorized skills', 'Skills automatically organized into clean, profession-appropriate categories.'],
             ].map(([title, description], index) => (
               <li key={title} className="flex gap-3">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 text-[10px] font-semibold text-slate-500 dark:border-slate-700">
@@ -264,7 +362,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           </ol>
           <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-800">
             <p className="text-[11px] leading-relaxed text-slate-500">
-              Review the parsed profile after import. You can edit or remove every imported entry.
+              Review the parsed profile after import. You can edit, add, or AI-enhance every imported entry.
             </p>
           </div>
         </Panel>
