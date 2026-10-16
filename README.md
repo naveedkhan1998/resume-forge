@@ -98,5 +98,27 @@ the model to invent unsupported skills or metrics.
 
 ---
 
+## 🌐 Frontend Cloudflare Pages Deployment
+
+The frontend (`apps/web`) can be deployed to Cloudflare Pages:
+
+```bash
+# Preview build locally with Cloudflare Pages simulation
+npm run pages:preview
+# or: npm run preview:web
+
+# Deploy to Cloudflare Pages
+npm run pages:deploy
+# or: npm run deploy:web
+```
+
+### Cloudflare Dashboard Configuration (Git Integration)
+- **Framework preset**: `None` / `Vite`
+- **Build command**: `npm run build:web`
+- **Build output directory**: `dist/apps/web`
+- **Root directory**: `/`
+
+---
+
 ## 📜 License
 MIT License.

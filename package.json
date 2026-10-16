@@ -9,6 +9,11 @@
     "dev:api:local": "nx run api:serve-local",
     "build": "nx run-many -t build",
     "build:web": "nx build web",
+    "preview:web": "npm run build:web && wrangler pages dev dist/apps/web",
+    "deploy:web": "npm run build:web && wrangler pages deploy dist/apps/web",
+    "pages:build": "npm run build:web",
+    "pages:preview": "npm run preview:web",
+    "pages:deploy": "npm run deploy:web",
     "migrate": "nx run api:migrate",
     "makemigrations": "nx run api:makemigrations",
     "docker:up": "docker compose up -d",
@@ -37,7 +42,8 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.0",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.151.0"
   },
   "dependencies": {
     "clsx": "^2.1.1",

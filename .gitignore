@@ -45,6 +45,7 @@ Thumbs.db
 .claude/settings.local.json
 
 vite.config.*.timestamp*
+.wrangler/
 
 # Python & Environment
 .venv/
