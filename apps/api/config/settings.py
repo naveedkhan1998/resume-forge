@@ -149,3 +149,22 @@ OLLAMA_BASE_URL = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
 OLLAMA_DEFAULT_MODEL = os.getenv('OLLAMA_DEFAULT_MODEL', 'qwen3.5:9b')
 OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
 OLLAMA_TIMEOUT = float(os.getenv('OLLAMA_TIMEOUT', '600.0'))
+
+# System-Level Fallback LLM Settings (Hidden server-side secrets, NEVER exposed via API)
+SYSTEM_LLM_PROVIDER = os.getenv(
+    'SYSTEM_LLM_PROVIDER',
+    os.getenv('PYDANTIC_GATEWAY_PROVIDER', 'pydantic_gateway')
+).strip().lower()
+SYSTEM_LLM_BASE_URL = os.getenv(
+    'SYSTEM_LLM_BASE_URL',
+    os.getenv('PYDANTIC_GATEWAY_URL', os.getenv('PYDANTIC_AI_GATEWAY_URL', 'https://gateway.pydantic.dev/v1'))
+).strip()
+SYSTEM_LLM_API_KEY = os.getenv(
+    'SYSTEM_LLM_API_KEY',
+    os.getenv('PYDANTIC_GATEWAY_API_KEY', os.getenv('PYDANTIC_AI_GATEWAY_API_KEY', ''))
+).strip()
+SYSTEM_LLM_MODEL = os.getenv(
+    'SYSTEM_LLM_MODEL',
+    os.getenv('PYDANTIC_GATEWAY_MODEL', os.getenv('OLLAMA_DEFAULT_MODEL', 'qwen3.5:9b'))
+).strip()
+

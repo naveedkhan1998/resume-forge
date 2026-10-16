@@ -120,13 +120,34 @@ class UserAISettings(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='ai_settings')
     provider = models.CharField(max_length=50, default='ollama')
     ollama_endpoint = models.CharField(max_length=255, default='http://localhost:11434')
-    openrouter_endpoint = models.CharField(max_length=255, default='https://openrouter.ai/api/v1')
+    openrouter_endpoint = models.CharField(max_length=255, default='https://gateway.pydantic.dev/v1')
     api_key = models.CharField(max_length=255, blank=True, default='')
     model_name = models.CharField(max_length=100, default='qwen3.5:9b')
     embedding_model = models.CharField(max_length=100, default='nomic-embed-text')
     temperature = models.FloatField(default=0.7)
     custom_instructions = models.TextField(blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def pydantic_gateway_endpoint(self) -> str:
+        val = (self.openrouter_endpoint or '').strip()
+        if not val or 'openrouter.ai' in val:
+            return 'https://gateway.pydantic.dev/v1'
+        return val
+
+    @pydantic_gateway_endpoint.setter
+    def pydantic_gateway_endpoint(self, value: str) -> None:
+        self.openrouter_endpoint = (value or 'https://gateway.pydantic.dev/v1').strip()
+
+    @property
+    def system_fallback_available(self) -> bool:
+        from django.conf import settings as django_settings
+        sys_key = getattr(django_settings, 'SYSTEM_LLM_API_KEY', '')
+        sys_provider = getattr(django_settings, 'SYSTEM_LLM_PROVIDER', 'pydantic_gateway')
+        sys_url = getattr(django_settings, 'SYSTEM_LLM_BASE_URL', '')
+        if sys_provider == 'ollama':
+            return bool(sys_url)
+        return bool(sys_key and sys_url)
 
     def __str__(self):
         return f"{self.user.username}'s AI Settings ({self.provider}: {self.model_name})"

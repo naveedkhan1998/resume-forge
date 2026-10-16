@@ -1,4 +1,4 @@
-import { MasterContext, Profile, Experience, Education, Skill, Project, Certification, JobApplication, AISettings, ResumeUploadResult } from '../types';
+import { MasterContext, Profile, Experience, Education, Skill, Project, Certification, JobApplication, AISettings, ResumeUploadResult, LocalOllamaPresetStatus } from '../types';
 
 const API_BASE = '/api';
 
@@ -30,7 +30,7 @@ async function handleResponse<T = any>(res: Response): Promise<T> {
 
 export const api = {
   // AI Health & Settings
-  async getAiHealth(options?: string | { provider?: string; endpoint?: string; api_key?: string }) {
+  async getAiHealth(options?: string | { provider?: string; endpoint?: string; api_key?: string; probe_presets?: boolean }) {
     let query = '';
     if (typeof options === 'string') {
       query = options ? `?endpoint=${encodeURIComponent(options)}` : '';
@@ -39,11 +39,20 @@ export const api = {
       if (options.provider) params.append('provider', options.provider);
       if (options.endpoint) params.append('endpoint', options.endpoint);
       if (options.api_key) params.append('api_key', options.api_key);
+      if (options.probe_presets) params.append('probe_presets', 'true');
       const str = params.toString();
       if (str) query = `?${str}`;
     }
     const res = await fetch(`${API_BASE}/ai/health${query}`);
-    return handleResponse<{ connected: boolean; models?: string[]; error?: string }>(res);
+    return handleResponse<{
+      connected: boolean;
+      models?: string[];
+      error?: string;
+      message?: string;
+      presets?: LocalOllamaPresetStatus[];
+      recommended_endpoint?: string | null;
+      system_fallback_available?: boolean;
+    }>(res);
   },
 
   async getAiSettings(): Promise<AISettings> {

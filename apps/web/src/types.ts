@@ -86,15 +86,26 @@ export interface Project {
   order?: number;
 }
 
+export interface LocalOllamaPresetStatus {
+  label: string;
+  url: string;
+  hint?: string;
+  connected: boolean;
+  models?: string[];
+  error?: string;
+}
+
 export interface AISettings {
-  provider?: 'ollama' | 'openrouter';
+  provider?: 'ollama' | 'pydantic_gateway' | 'openrouter';
   ollama_endpoint: string;
+  pydantic_gateway_endpoint?: string;
   openrouter_endpoint?: string;
   api_key?: string;
   model_name: string;
   embedding_model?: string;
   temperature: number;
   custom_instructions?: string;
+  system_fallback_available?: boolean;
 }
 
 export interface TailoredDocument {

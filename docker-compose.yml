@@ -33,6 +33,10 @@ services:
       - DEBUG=1
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-resumebuilder}
       - OLLAMA_BASE_URL=${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      - SYSTEM_LLM_PROVIDER=${SYSTEM_LLM_PROVIDER:-pydantic_gateway}
+      - SYSTEM_LLM_BASE_URL=${SYSTEM_LLM_BASE_URL:-https://gateway.pydantic.dev/v1}
+      - SYSTEM_LLM_API_KEY=${SYSTEM_LLM_API_KEY:-}
+      - SYSTEM_LLM_MODEL=${SYSTEM_LLM_MODEL:-qwen3.5:9b}
       - SECRET_KEY=${SECRET_KEY:-django-insecure-dev-key-change-in-production}
     volumes:
       - ./apps/api:/app/apps/api

@@ -134,12 +134,14 @@ class ProjectSchema(Schema):
 class AISettingsSchema(Schema):
     provider: Optional[str] = "ollama"
     ollama_endpoint: Optional[str] = "http://localhost:11434"
-    openrouter_endpoint: Optional[str] = "https://openrouter.ai/api/v1"
+    pydantic_gateway_endpoint: Optional[str] = "https://gateway.pydantic.dev/v1"
+    openrouter_endpoint: Optional[str] = "https://gateway.pydantic.dev/v1"
     api_key: Optional[str] = ""
     model_name: str
     embedding_model: Optional[str] = "nomic-embed-text"
     temperature: float
     custom_instructions: Optional[str] = ""
+    system_fallback_available: Optional[bool] = False
 
 class JobApplicationCreateSchema(Schema):
     company_name: str
@@ -245,13 +247,21 @@ def ai_health(
     provider: Optional[str] = None,
     endpoint: Optional[str] = None,
     api_key: Optional[str] = None,
+    probe_presets: bool = False,
 ):
     user = get_current_user(request)
     ai_settings = getattr(user, 'ai_settings', None)
     active_provider = (provider or (ai_settings.provider if ai_settings else "ollama")).lower().strip()
+    if active_provider == "gateway":
+        active_provider = "pydantic_gateway"
     key = api_key if api_key is not None else (ai_settings.api_key if ai_settings else "")
-    if active_provider == "openrouter":
-        url = endpoint or (ai_settings.openrouter_endpoint if ai_settings else "https://openrouter.ai/api/v1")
+    if OllamaService._is_gateway_provider(active_provider):
+        default_gw = (
+            ai_settings.pydantic_gateway_endpoint
+            if ai_settings
+            else OllamaService.DEFAULT_GATEWAY_URL
+        )
+        url = endpoint or default_gw
     else:
         url = endpoint or (ai_settings.ollama_endpoint if ai_settings else "http://localhost:11434")
 
@@ -260,44 +270,72 @@ def ai_health(
         api_key=key,
         provider=active_provider,
     )
-    return service.check_health_sync()
+    return service.check_health_sync(probe_presets=probe_presets)
 
 @api.get("/ai/settings", response=AISettingsSchema)
 def get_ai_settings(request: HttpRequest):
     user = get_current_user(request)
-    settings, _ = UserAISettings.objects.get_or_create(user=user)
-    return settings
+    settings_obj, _ = UserAISettings.objects.get_or_create(user=user)
+    # Normalize legacy 'openrouter' provider label to 'pydantic_gateway' for UI while keeping user's own config only
+    effective_provider = settings_obj.provider
+    if effective_provider in {"openrouter", "gateway"}:
+        effective_provider = "pydantic_gateway"
+    return {
+        "provider": effective_provider,
+        "ollama_endpoint": settings_obj.ollama_endpoint,
+        "pydantic_gateway_endpoint": settings_obj.pydantic_gateway_endpoint,
+        "openrouter_endpoint": settings_obj.openrouter_endpoint,
+        "api_key": settings_obj.api_key,
+        "model_name": settings_obj.model_name,
+        "embedding_model": settings_obj.embedding_model,
+        "temperature": settings_obj.temperature,
+        "custom_instructions": settings_obj.custom_instructions,
+        "system_fallback_available": OllamaService.is_system_fallback_configured(),
+    }
 
 @api.post("/ai/settings")
 def update_ai_settings(request: HttpRequest, data: AISettingsSchema):
     provider = (data.provider or "ollama").lower().strip()
-    if provider not in {"ollama", "openrouter"}:
-        return api.create_response(request, {"error": "Provider must be 'ollama' or 'openrouter'."}, status=400)
+    if provider == "gateway":
+        provider = "pydantic_gateway"
+    if provider not in {"ollama", "pydantic_gateway", "openrouter"}:
+        return api.create_response(
+            request,
+            {"error": "Provider must be 'ollama' or 'pydantic_gateway'."},
+            status=400,
+        )
     if provider == "ollama" and data.ollama_endpoint and not data.ollama_endpoint.startswith(("http://", "https://")):
         return api.create_response(request, {"error": "Ollama endpoint must use http:// or https://."}, status=400)
-    if provider == "openrouter" and data.openrouter_endpoint and not data.openrouter_endpoint.startswith(("http://", "https://")):
-        return api.create_response(request, {"error": "OpenRouter endpoint must use http:// or https://."}, status=400)
+
+    gateway_endpoint = (data.pydantic_gateway_endpoint or data.openrouter_endpoint or "").strip()
+    if provider in {"pydantic_gateway", "openrouter"} and gateway_endpoint and not gateway_endpoint.startswith(("http://", "https://")):
+        return api.create_response(request, {"error": "Pydantic AI Gateway endpoint must use http:// or https://."}, status=400)
+
     if not data.model_name.strip():
         return api.create_response(request, {"error": "Model name is required."}, status=400)
     if not 0 <= data.temperature <= 1:
         return api.create_response(request, {"error": "Temperature must be between 0 and 1."}, status=400)
 
     user = get_current_user(request)
-    settings, _ = UserAISettings.objects.get_or_create(user=user)
-    settings.provider = provider
+    settings_obj, _ = UserAISettings.objects.get_or_create(user=user)
+    settings_obj.provider = provider
     if data.ollama_endpoint:
-        settings.ollama_endpoint = data.ollama_endpoint
-    if data.openrouter_endpoint:
-        settings.openrouter_endpoint = data.openrouter_endpoint
+        settings_obj.ollama_endpoint = data.ollama_endpoint.strip()
+    if gateway_endpoint:
+        settings_obj.openrouter_endpoint = gateway_endpoint
     if data.api_key is not None:
-        settings.api_key = data.api_key
-    settings.model_name = data.model_name
+        settings_obj.api_key = data.api_key.strip()
+    settings_obj.model_name = data.model_name.strip()
     if data.embedding_model:
-        settings.embedding_model = data.embedding_model
-    settings.temperature = data.temperature
-    settings.custom_instructions = data.custom_instructions or ""
-    settings.save()
-    return {"status": "success", "message": "AI settings updated"}
+        settings_obj.embedding_model = data.embedding_model.strip()
+    settings_obj.temperature = data.temperature
+    settings_obj.custom_instructions = data.custom_instructions or ""
+    settings_obj.save()
+    return {
+        "status": "success",
+        "message": "AI settings updated",
+        "system_fallback_available": OllamaService.is_system_fallback_configured(),
+    }
 
 @api.post("/ai/refine-section")
 def refine_section(request: HttpRequest, data: RefineSectionSchema):
