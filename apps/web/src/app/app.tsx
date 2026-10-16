@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { MasterProfile } from '../components/MasterProfile';
 import { ResumeUpload } from '../components/ResumeUpload';
@@ -11,10 +12,10 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 
 export function App() {
+  const navigate = useNavigate();
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   );
-  const [activeTab, setActiveTab] = useState<'master' | 'upload' | 'jobs' | 'settings'>('master');
   const [context, setContext] = useState<MasterContext | null>(null);
   const [aiConnected, setAiConnected] = useState(false);
   const [activeModel, setActiveModel] = useState('qwen3.5:9b');
@@ -30,8 +31,8 @@ export function App() {
       ]);
       setContext(ctx);
 
-      const endpoint = settings?.provider === 'openrouter'
-        ? settings?.openrouter_endpoint
+      const endpoint = settings?.provider === 'openrouter' || settings?.provider === 'pydantic_gateway'
+        ? (settings?.pydantic_gateway_endpoint || settings?.openrouter_endpoint)
         : settings?.ollama_endpoint;
 
       const health = await api.getAiHealth(settings ? {
@@ -71,8 +72,8 @@ export function App() {
 
   const handleSettingsSaved = (newSettings: AISettings) => {
     setActiveModel(newSettings.model_name);
-    const endpoint = newSettings.provider === 'openrouter'
-      ? newSettings.openrouter_endpoint
+    const endpoint = newSettings.provider === 'openrouter' || newSettings.provider === 'pydantic_gateway'
+      ? (newSettings.pydantic_gateway_endpoint || newSettings.openrouter_endpoint)
       : newSettings.ollama_endpoint;
     api.getAiHealth({
       provider: newSettings.provider,
@@ -102,8 +103,6 @@ export function App() {
   return (
     <div className="app-shell min-h-screen flex flex-col font-sans">
       <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         aiConnected={aiConnected}
         activeModel={activeModel}
         theme={theme}
@@ -112,42 +111,76 @@ export function App() {
 
       <main className="workspace-main flex-1 pb-20 md:pb-0">
         {loadError && (
-          <div className="mx-auto mt-6 flex max-w-4xl items-center justify-between gap-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span><strong>API unavailable.</strong> {loadError}</span>
+          <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between gap-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span><strong>API unavailable.</strong> {loadError}</span>
+              </div>
+              <Button variant="secondary" size="sm" onClick={loadData} className="shrink-0 border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-100 dark:hover:bg-slate-800">
+                <RefreshCw className="h-3.5 w-3.5" /> Retry
+              </Button>
             </div>
-            <Button variant="secondary" size="sm" onClick={loadData} className="shrink-0 border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-100 dark:hover:bg-slate-800">
-              <RefreshCw className="h-3.5 w-3.5" /> Retry
-            </Button>
           </div>
         )}
-        {activeTab === 'master' && context && (
-          <MasterProfile
-            context={context}
-            onRefresh={loadData}
-            activeModel={activeModel}
+
+        <Routes>
+          <Route
+            path="/"
+            element={
+              context ? (
+                <MasterProfile
+                  context={context}
+                  onRefresh={loadData}
+                  activeModel={activeModel}
+                />
+              ) : null
+            }
           />
-        )}
-
-        {activeTab === 'upload' && (
-          <ResumeUpload
-            onUploadSuccess={() => {
-              loadData();
-              setActiveTab('master');
-            }}
+          <Route
+            path="/profile"
+            element={
+              context ? (
+                <MasterProfile
+                  context={context}
+                  onRefresh={loadData}
+                  activeModel={activeModel}
+                />
+              ) : null
+            }
           />
-        )}
+          <Route path="/master" element={<Navigate to="/profile" replace />} />
 
-        {activeTab === 'jobs' && <JobTracker activeModel={activeModel} />}
+          <Route
+            path="/import"
+            element={
+              <ResumeUpload
+                onUploadSuccess={() => {
+                  loadData();
+                  navigate('/profile');
+                }}
+              />
+            }
+          />
+          <Route path="/upload" element={<Navigate to="/import" replace />} />
 
-        {activeTab === 'settings' && (
-          <Settings onSettingsSaved={handleSettingsSaved} />
-        )}
+          <Route
+            path="/jobs"
+            element={<JobTracker activeModel={activeModel} />}
+          />
+          <Route path="/applications" element={<Navigate to="/jobs" replace />} />
+
+          <Route
+            path="/settings"
+            element={<Settings onSettingsSaved={handleSettingsSaved} />}
+          />
+
+          <Route path="*" element={<Navigate to="/profile" replace />} />
+        </Routes>
       </main>
 
       <footer className="app-footer mt-12 hidden border-t border-slate-200/80 py-6 text-center text-xs text-slate-500 md:block">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 sm:flex-row">
           <p className="font-medium">ResumeForge · Your career data stays on your machine</p>
           <p className="text-slate-400">Private resume intelligence, built around you</p>
         </div>

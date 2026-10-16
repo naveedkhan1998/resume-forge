@@ -135,7 +135,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
     : [];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <SectionHeader
         title="Import resume"
         description="Turn an existing PDF, DOCX, TXT résumé, or pasted career notes into structured profile data."
