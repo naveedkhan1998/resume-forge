@@ -1,3 +1,4 @@
+from typing import Optional
 from django.db import models
 from django.contrib.auth.models import User
 from pgvector.django import VectorField
@@ -148,6 +149,13 @@ class UserAISettings(models.Model):
         if sys_provider == 'ollama':
             return bool(sys_url)
         return bool(sys_key and sys_url)
+
+    @property
+    def system_fallback_model(self) -> Optional[str]:
+        if self.system_fallback_available:
+            from django.conf import settings as django_settings
+            return getattr(django_settings, 'SYSTEM_LLM_MODEL', 'qwen3.5:9b') or 'qwen3.5:9b'
+        return None
 
     def __str__(self):
         return f"{self.user.username}'s AI Settings ({self.provider}: {self.model_name})"

@@ -230,6 +230,8 @@ class OllamaService:
         """Check if LLM provider server is reachable."""
         headers = self._get_headers()
         provider_label = self._provider_display_name()
+        fallback_active = self.is_system_fallback_configured()
+        fallback_model = self.get_system_fallback_model() if fallback_active else None
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
                 if self._is_gateway_provider(self.provider):
@@ -238,7 +240,8 @@ class OllamaService:
                             "status": "error",
                             "connected": False,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "error": f"{provider_label} requires an API key.",
                         }
                     res = await client.get(f"{self.base_url}/models", headers=headers)
@@ -254,7 +257,8 @@ class OllamaService:
                             "status": "ok",
                             "connected": True,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": models[:60],
                         }
                     if res.status_code in {404, 405} and self.provider in {"pydantic_gateway", "gateway"}:
@@ -263,7 +267,8 @@ class OllamaService:
                             "status": "ok",
                             "connected": True,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": [],
                             "message": "Gateway endpoint is reachable (model listing handled by upstream route).",
                         }
@@ -272,7 +277,8 @@ class OllamaService:
                         "status": "error",
                         "connected": False,
                         "provider": self.provider,
-                        "system_fallback_available": self.is_system_fallback_configured(),
+                        "system_fallback_available": fallback_active,
+                        "system_fallback_model": fallback_model,
                         "error": f"{provider_label} HTTP {res.status_code}: {detail}",
                     }
                 else:
@@ -284,14 +290,16 @@ class OllamaService:
                             "status": "ok",
                             "connected": True,
                             "provider": "ollama",
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": models,
                         }
                     return {
                         "status": "error",
                         "connected": False,
                         "provider": "ollama",
-                        "system_fallback_available": self.is_system_fallback_configured(),
+                        "system_fallback_available": fallback_active,
+                        "system_fallback_model": fallback_model,
                         "error": f"Ollama HTTP {res.status_code}: {res.text[:200]}",
                     }
         except Exception as e:
@@ -299,7 +307,8 @@ class OllamaService:
                 "status": "error",
                 "connected": False,
                 "provider": self.provider,
-                "system_fallback_available": self.is_system_fallback_configured(),
+                "system_fallback_available": fallback_active,
+                "system_fallback_model": fallback_model,
                 "error": f"Could not connect to {provider_label}: {str(e)}",
             }
 
@@ -307,6 +316,8 @@ class OllamaService:
         """Synchronous health check with optional local Ollama preset probing."""
         headers = self._get_headers()
         provider_label = self._provider_display_name()
+        fallback_active = self.is_system_fallback_configured()
+        fallback_model = self.get_system_fallback_model() if fallback_active else None
         try:
             with httpx.Client(timeout=8.0) as client:
                 if self._is_gateway_provider(self.provider):
@@ -315,7 +326,8 @@ class OllamaService:
                             "status": "error",
                             "connected": False,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "error": f"{provider_label} requires an API key.",
                         }
                     res = client.get(f"{self.base_url}/models", headers=headers)
@@ -331,7 +343,8 @@ class OllamaService:
                             "status": "ok",
                             "connected": True,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": models[:60],
                         }
                     if res.status_code in {404, 405} and self.provider in {"pydantic_gateway", "gateway"}:
@@ -339,7 +352,8 @@ class OllamaService:
                             "status": "ok",
                             "connected": True,
                             "provider": self.provider,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": [],
                             "message": "Gateway endpoint is reachable (specify your upstream model name below).",
                         }
@@ -348,7 +362,8 @@ class OllamaService:
                         "status": "error",
                         "connected": False,
                         "provider": self.provider,
-                        "system_fallback_available": self.is_system_fallback_configured(),
+                        "system_fallback_available": fallback_active,
+                        "system_fallback_model": fallback_model,
                         "error": f"{provider_label} HTTP {res.status_code}: {detail}",
                     }
                 else:
@@ -361,7 +376,8 @@ class OllamaService:
                             "connected": True,
                             "provider": "ollama",
                             "endpoint": self.base_url,
-                            "system_fallback_available": self.is_system_fallback_configured(),
+                            "system_fallback_available": fallback_active,
+                            "system_fallback_model": fallback_model,
                             "models": models,
                         }
                         if probe_presets:
@@ -374,7 +390,8 @@ class OllamaService:
                         "connected": False,
                         "provider": "ollama",
                         "endpoint": self.base_url,
-                        "system_fallback_available": self.is_system_fallback_configured(),
+                        "system_fallback_available": fallback_active,
+                        "system_fallback_model": fallback_model,
                         "error": f"Ollama HTTP {res.status_code}: {res.text[:200]}",
                     }
                     if probe_presets:
@@ -388,7 +405,8 @@ class OllamaService:
                 "connected": False,
                 "provider": self.provider,
                 "endpoint": self.base_url if not self._is_system_fallback else None,
-                "system_fallback_available": self.is_system_fallback_configured(),
+                "system_fallback_available": fallback_active,
+                "system_fallback_model": fallback_model,
                 "error": f"Could not connect to {provider_label}: {str(e)}",
             }
             if probe_presets and not self._is_gateway_provider(self.provider):

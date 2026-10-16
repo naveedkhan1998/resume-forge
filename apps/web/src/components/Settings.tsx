@@ -132,6 +132,10 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
         setSettings((prev) => ({
           ...prev,
           system_fallback_available: response.system_fallback_available,
+          system_fallback_model:
+            typeof response.system_fallback_model !== 'undefined'
+              ? response.system_fallback_model
+              : prev.system_fallback_model,
         }));
       }
 
@@ -221,10 +225,8 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
           provider: normalizedProvider,
           pydantic_gateway_endpoint: gwUrl,
           openrouter_endpoint: gwUrl,
-          temperature:
-            typeof data?.temperature === 'number'
-              ? data.temperature
-              : DEFAULT_SETTINGS.temperature,
+          system_fallback_available: data?.system_fallback_available || false,
+          system_fallback_model: data?.system_fallback_model || null,
         };
         setSettings(loaded);
         await testConnection(loaded, false);
@@ -276,6 +278,10 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
           typeof res?.system_fallback_available === 'boolean'
             ? res.system_fallback_available
             : settings.system_fallback_available,
+        system_fallback_model:
+          typeof res?.system_fallback_model !== 'undefined'
+            ? res.system_fallback_model
+            : settings.system_fallback_model,
       };
       setSettings(updatedSettings);
       onSettingsSaved(updatedSettings);
@@ -413,7 +419,7 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
               <div className="flex gap-3">
                 <Server className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
                       System-level fallback
                     </p>
@@ -426,10 +432,15 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
                     >
                       {settings.system_fallback_available ? 'Configured' : 'Not set'}
                     </span>
+                    {settings.system_fallback_available && settings.system_fallback_model && (
+                      <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        Model: {settings.system_fallback_model}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
                     {settings.system_fallback_available
-                      ? 'If your personal LLM settings are unconfigured or unreachable, ResumeForge automatically falls back to the server environment LLM. Server fallback keys are strictly hidden and never exposed via the API.'
+                      ? `If your personal LLM settings are unconfigured or unreachable, ResumeForge automatically falls back to the server environment LLM using model '${settings.system_fallback_model || 'qwen3.5:9b'}'. Server credentials and endpoints remain strictly private and hidden.`
                       : 'Each user can configure their own model below. Server admins can also set SYSTEM_LLM_API_KEY and SYSTEM_LLM_BASE_URL in environment variables as a hidden system-wide fallback.'}
                   </p>
                 </div>

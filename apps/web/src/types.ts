@@ -106,6 +106,7 @@ export interface AISettings {
   temperature: number;
   custom_instructions?: string;
   system_fallback_available?: boolean;
+  system_fallback_model?: string | null;
 }
 
 export interface TailoredDocument {

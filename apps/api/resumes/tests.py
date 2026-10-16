@@ -1629,7 +1629,10 @@ Portfolio: https://adalovelace.dev
             self.assertNotIn("secret-system-gateway.internal", raw_body)
             settings_json = get_res.json()
             self.assertTrue(settings_json["system_fallback_available"])
+            self.assertEqual(settings_json["system_fallback_model"], "qwen3.5:9b")
             self.assertEqual(settings_json["api_key"], "")
+            self.assertNotIn("system_fallback_base_url", settings_json)
+            self.assertNotIn("system_fallback_api_key", settings_json)
 
             # 2. Verify that when user's local Ollama fails to connect, OllamaService falls back to the system gateway
             def fake_post(url, headers=None, json=None, **kwargs):

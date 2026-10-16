@@ -52,6 +52,7 @@ export const api = {
       presets?: LocalOllamaPresetStatus[];
       recommended_endpoint?: string | null;
       system_fallback_available?: boolean;
+      system_fallback_model?: string | null;
     }>(res);
   },
 

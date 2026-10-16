@@ -142,6 +142,7 @@ class AISettingsSchema(Schema):
     temperature: float
     custom_instructions: Optional[str] = ""
     system_fallback_available: Optional[bool] = False
+    system_fallback_model: Optional[str] = None
 
 class JobApplicationCreateSchema(Schema):
     company_name: str
@@ -279,6 +280,7 @@ def get_ai_settings(request: HttpRequest):
     effective_provider = settings_obj.provider or "ollama"
     if effective_provider == "gateway":
         effective_provider = "pydantic_gateway"
+    fallback_configured = OllamaService.is_system_fallback_configured()
     return {
         "provider": effective_provider,
         "ollama_endpoint": settings_obj.ollama_endpoint,
@@ -289,7 +291,8 @@ def get_ai_settings(request: HttpRequest):
         "embedding_model": settings_obj.embedding_model,
         "temperature": settings_obj.temperature,
         "custom_instructions": settings_obj.custom_instructions,
-        "system_fallback_available": OllamaService.is_system_fallback_configured(),
+        "system_fallback_available": fallback_configured,
+        "system_fallback_model": OllamaService.get_system_fallback_model() if fallback_configured else None,
     }
 
 @api.post("/ai/settings")
@@ -330,10 +333,12 @@ def update_ai_settings(request: HttpRequest, data: AISettingsSchema):
     settings_obj.temperature = data.temperature
     settings_obj.custom_instructions = data.custom_instructions or ""
     settings_obj.save()
+    fallback_configured = OllamaService.is_system_fallback_configured()
     return {
         "status": "success",
         "message": "AI settings updated",
-        "system_fallback_available": OllamaService.is_system_fallback_configured(),
+        "system_fallback_available": fallback_configured,
+        "system_fallback_model": OllamaService.get_system_fallback_model() if fallback_configured else None,
     }
 
 @api.post("/ai/refine-section")
