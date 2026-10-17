@@ -93,6 +93,16 @@ html.dark {
     border-color: var(--line);
   }
 
+  @media (max-width: 767px), (hover: none) and (pointer: coarse) {
+    input,
+    textarea,
+    select,
+    .field-input,
+    .field-textarea {
+      font-size: 16px !important;
+    }
+  }
+
   option {
     color: var(--text);
     background: var(--input-bg);
