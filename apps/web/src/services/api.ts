@@ -119,6 +119,62 @@ async function handleResponse<T = any>(res: Response): Promise<T> {
 }
 
 export const api = {
+  // API Cold-Start & Readiness Health Check
+  async checkHealth(): Promise<{ status: string; timestamp?: string }> {
+    const res = await fetch(`${API_BASE}/health`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    return handleResponse<{ status: string; timestamp?: string }>(res);
+  },
+
+  async waitForHealth(options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    perAttemptTimeoutMs?: number;
+    onWaiting?: (attempt: number, elapsedMs: number) => void;
+  }): Promise<{ status: string; timestamp?: string }> {
+    const timeoutMs = options?.timeoutMs ?? 90000;
+    const intervalMs = options?.intervalMs ?? 2000;
+    const perAttemptTimeoutMs = options?.perAttemptTimeoutMs ?? 15000;
+    const startTime = Date.now();
+    let attempt = 0;
+
+    while (true) {
+      attempt += 1;
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller
+        ? setTimeout(() => controller.abort(), perAttemptTimeoutMs)
+        : null;
+      try {
+        const res = await fetch(`${API_BASE}/health`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller?.signal,
+        });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({ status: 'ok' }));
+          return data;
+        }
+      } catch {
+        // Ignore network/timeout errors while free-tier server wakes up from cold start
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs >= timeoutMs) {
+        throw new Error('API server is taking too long to respond. Please retry.');
+      }
+
+      if (options?.onWaiting) {
+        options.onWaiting(attempt, elapsedMs);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  },
+
   // Device Session Management
   getStoredSessionToken,
   setStoredSessionToken,

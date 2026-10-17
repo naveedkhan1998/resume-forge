@@ -64,6 +64,143 @@ def _extract_session_token(request: HttpRequest, explicit_token: Optional[str] =
     return ""
 
 
+def _get_dummy_source_user(exclude_user_id: Optional[int] = None) -> Optional[User]:
+    session_qs = DeviceSession.objects.select_related("user").filter(is_dummy=True)
+    if exclude_user_id is not None:
+        session_qs = session_qs.exclude(user_id=exclude_user_id)
+    dummy_session = session_qs.order_by("-last_active_at", "-id").first()
+    if dummy_session is not None:
+        return dummy_session.user
+
+    profile_qs = Profile.objects.select_related("user").filter(is_dummy=True)
+    if exclude_user_id is not None:
+        profile_qs = profile_qs.exclude(user_id=exclude_user_id)
+    dummy_profile = profile_qs.order_by("-updated_at", "-id").first()
+    if dummy_profile is not None:
+        return dummy_profile.user
+
+    return None
+
+
+def _copy_dummy_user_data(source_user: User, target_user: User) -> None:
+    if source_user.id == target_user.id:
+        return
+
+    source_profile = Profile.objects.filter(user=source_user).first()
+    target_profile, _ = Profile.objects.get_or_create(user=target_user)
+    if source_profile is not None:
+        for field in (
+            "full_name",
+            "headline",
+            "email",
+            "phone",
+            "location",
+            "website_url",
+            "linkedin_url",
+            "github_url",
+            "summary",
+            "raw_resume_text",
+        ):
+            setattr(target_profile, field, getattr(source_profile, field, ""))
+        target_profile.save()
+
+    Experience.objects.bulk_create([
+        Experience(
+            user=target_user,
+            company=exp.company,
+            role=exp.role,
+            location=exp.location,
+            start_date=exp.start_date,
+            end_date=exp.end_date,
+            is_current=exp.is_current,
+            description=exp.description,
+            bullet_points=list(exp.bullet_points or []),
+            technologies=list(exp.technologies or []),
+            order=exp.order,
+        )
+        for exp in source_user.experiences.all()
+    ])
+
+    Education.objects.bulk_create([
+        Education(
+            user=target_user,
+            institution=edu.institution,
+            degree=edu.degree,
+            field_of_study=edu.field_of_study,
+            start_date=edu.start_date,
+            end_date=edu.end_date,
+            gpa=edu.gpa,
+            highlights=list(edu.highlights or []),
+            order=edu.order,
+        )
+        for edu in source_user.educations.all()
+    ])
+
+    Skill.objects.bulk_create([
+        Skill(
+            user=target_user,
+            category=sk.category,
+            name=sk.name,
+            proficiency=sk.proficiency,
+            order=sk.order,
+        )
+        for sk in source_user.skills.all()
+    ])
+
+    Project.objects.bulk_create([
+        Project(
+            user=target_user,
+            title=proj.title,
+            subtitle=proj.subtitle,
+            role=proj.role,
+            repo_url=proj.repo_url,
+            live_url=proj.live_url,
+            start_date=proj.start_date,
+            end_date=proj.end_date,
+            bullet_points=list(proj.bullet_points or []),
+            technologies=list(proj.technologies or []),
+            order=proj.order,
+        )
+        for proj in source_user.projects.all()
+    ])
+
+    Certification.objects.bulk_create([
+        Certification(
+            user=target_user,
+            name=cert.name,
+            issuer=cert.issuer,
+            issue_date=cert.issue_date,
+            credential_url=cert.credential_url,
+            order=cert.order,
+        )
+        for cert in source_user.certifications.all()
+    ])
+
+    for app in source_user.applications.all().order_by("created_at", "id"):
+        new_app = JobApplication.objects.create(
+            user=target_user,
+            company_name=app.company_name,
+            job_title=app.job_title,
+            job_url=app.job_url,
+            raw_description=app.raw_description,
+            extracted_keywords=list(app.extracted_keywords or []),
+            status=app.status,
+            match_score=app.match_score,
+            notes=app.notes,
+            applied_date=app.applied_date,
+        )
+        TailoredDocument.objects.bulk_create([
+            TailoredDocument(
+                application=new_app,
+                doc_type=doc.doc_type,
+                latex_source=doc.latex_source,
+                tailoring_rationale=doc.tailoring_rationale,
+                version=doc.version,
+            )
+            for doc in app.documents.all().order_by("version", "created_at", "id")
+        ])
+
+
 def _create_isolated_device_session(
     token: Optional[str] = None,
     device_fingerprint: str = "",
@@ -90,11 +227,17 @@ def _create_isolated_device_session(
             user=user,
             defaults={"ollama_endpoint": default_ollama_url},
         )
+        dummy_user = _get_dummy_source_user(exclude_user_id=user.id)
+        copied_dummy_data = False
+        if dummy_user is not None:
+            _copy_dummy_user_data(dummy_user, user)
+            copied_dummy_data = True
+
         session = DeviceSession.objects.create(
             user=user,
             token=session_token,
             device_fingerprint=(device_fingerprint or "")[:255],
-            resume_uploaded=False,
+            resume_uploaded=copied_dummy_data,
             llm_calls_used=0,
             llm_calls_limit=max(0, default_quota),
         )
@@ -147,6 +290,7 @@ def _serialize_session(session: DeviceSession) -> Dict[str, Any]:
     return {
         "token": session.token,
         "username": session.user.username,
+        "is_dummy": session.is_dummy,
         "resume_uploaded": session.resume_uploaded,
         "llm_unlocked": session.is_llm_unlocked,
         "llm_calls_used": session.llm_calls_used,
@@ -379,6 +523,11 @@ class ExportCustomZipSchema(Schema):
 # -------------------------------------------------------------
 # Device Session & Auth Endpoints
 # -------------------------------------------------------------
+@api.get("/health")
+def api_health(request: HttpRequest):
+    return {"status": "ok", "timestamp": timezone.now().isoformat()}
+
+
 @api.post("/session/init")
 def init_session(request: HttpRequest, data: Optional[SessionInitSchema] = None):
     explicit_token = data.token if data else None

@@ -15,6 +15,7 @@ class Profile(models.Model):
     github_url = models.TextField(blank=True, default='')
     summary = models.TextField(blank=True, default='')
     raw_resume_text = models.TextField(blank=True, default='')
+    is_dummy = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -229,6 +230,7 @@ class DeviceSession(models.Model):
     token = models.CharField(max_length=128, unique=True, db_index=True)
     device_fingerprint = models.CharField(max_length=255, blank=True, default='')
     resume_uploaded = models.BooleanField(default=False)
+    is_dummy = models.BooleanField(default=False, db_index=True)
     llm_calls_used = models.PositiveIntegerField(default=0)
     llm_calls_limit = models.PositiveIntegerField(default=25)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -245,7 +247,7 @@ class DeviceSession(models.Model):
 
     @property
     def is_llm_unlocked(self) -> bool:
-        if self.resume_uploaded:
+        if self.resume_uploaded or self.is_dummy:
             return True
         profile = getattr(self.user, 'profile', None)
         if profile and (profile.raw_resume_text or '').strip():

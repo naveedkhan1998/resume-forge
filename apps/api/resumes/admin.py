@@ -15,7 +15,9 @@ from .models import (
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'full_name', 'email', 'updated_at')
+    list_display = ('user', 'full_name', 'email', 'is_dummy', 'updated_at')
+    list_filter = ('is_dummy',)
+    list_editable = ('is_dummy',)
     search_fields = ('user__username', 'full_name', 'email')
 
 @admin.register(Experience)
@@ -63,7 +65,8 @@ class ItemEmbeddingAdmin(admin.ModelAdmin):
 
 @admin.register(DeviceSession)
 class DeviceSessionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'token', 'resume_uploaded', 'llm_calls_used', 'llm_calls_limit', 'last_active_at', 'created_at')
-    list_filter = ('resume_uploaded',)
+    list_display = ('user', 'token', 'is_dummy', 'resume_uploaded', 'llm_calls_used', 'llm_calls_limit', 'last_active_at', 'created_at')
+    list_filter = ('is_dummy', 'resume_uploaded')
+    list_editable = ('is_dummy',)
     search_fields = ('user__username', 'token')
 

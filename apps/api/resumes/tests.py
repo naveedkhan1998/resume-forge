@@ -13,6 +13,7 @@ from pypdf import PdfReader
 
 from .models import (
     Certification,
+    DeviceSession,
     Education,
     Experience,
     JobApplication,
@@ -2014,4 +2015,166 @@ class DeviceSessionAndLLMGatingTests(TestCase):
             self.assertFalse(status_after_fallback["using_custom_ai"])
             self.assertEqual(status_after_fallback["ai_provider_mode"], "system_fallback")
             self.assertEqual(status_after_fallback["llm_quota_remaining"], 1)
+
+    def test_health_endpoints(self):
+        api_health = self.client.get("/api/health")
+        self.assertEqual(api_health.status_code, 200)
+        self.assertEqual(api_health.json()["status"], "ok")
+
+        root_health = self.client.get("/health")
+        self.assertEqual(root_health.status_code, 200)
+        self.assertEqual(root_health.json()["status"], "ok")
+
+    def test_new_device_session_copies_data_from_flagged_dummy_user(self):
+        dummy_token = "rf_template_dummy_token_123456"
+        self.client.post(
+            "/api/session/init",
+            data=json.dumps({"token": dummy_token}),
+            content_type="application/json",
+        )
+
+        # Populate dummy user's profile, experience, education, skill, project, cert, and job application
+        self.client.put(
+            "/api/master/profile",
+            data=json.dumps({
+                "full_name": "Jane Dummy",
+                "headline": "Principal AI Engineer",
+                "email": "jane@dummy.dev",
+                "phone": "555-0199",
+                "location": "San Francisco, CA",
+                "website_url": "https://jane.dev",
+                "linkedin_url": "https://linkedin.com/in/jane",
+                "github_url": "https://github.com/jane",
+                "summary": "Experienced AI systems architect.",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        self.client.post(
+            "/api/master/experiences",
+            data=json.dumps({
+                "company": "NeuralWorks",
+                "role": "Lead Engineer",
+                "bullet_points": ["Scaled inference cluster to 10k RPS"],
+                "technologies": ["Python", "PyTorch"],
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        self.client.post(
+            "/api/master/educations",
+            data=json.dumps({
+                "institution": "MIT",
+                "degree": "M.S.",
+                "field_of_study": "Computer Science",
+                "highlights": ["GPA 4.0"],
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        self.client.post(
+            "/api/master/skills",
+            data=json.dumps({
+                "category": "Languages",
+                "name": "Python",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        self.client.post(
+            "/api/master/projects",
+            data=json.dumps({
+                "title": "ResumeForge",
+                "bullet_points": ["Built AI resume builder"],
+                "technologies": ["Django", "React"],
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        self.client.post(
+            "/api/master/certifications",
+            data=json.dumps({
+                "name": "AWS Solutions Architect",
+                "issuer": "Amazon",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        )
+        job_res = self.client.post(
+            "/api/jobs",
+            data=json.dumps({
+                "company_name": "OpenAI",
+                "job_title": "Research Engineer",
+                "raw_description": "Distributed training",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=dummy_token,
+        ).json()
+        dummy_app = JobApplication.objects.get(id=job_res["id"])
+        TailoredDocument.objects.create(
+            application=dummy_app,
+            doc_type="resume",
+            latex_source="\\documentclass{resumeforge}\\begin{document}Jane Dummy\\end{document}",
+            tailoring_rationale="Matched distributed systems experience",
+            version=1,
+        )
+
+        # Turn on the dummy user flag in the DB for this device session
+        DeviceSession.objects.filter(token=dummy_token).update(is_dummy=True)
+
+        # Now initialize a brand new device session
+        new_visitor_token = "rf_new_visitor_device_789012"
+        init_res = self.client.post(
+            "/api/session/init",
+            data=json.dumps({"token": new_visitor_token}),
+            content_type="application/json",
+        )
+        self.assertEqual(init_res.status_code, 200)
+        init_data = init_res.json()
+        self.assertEqual(init_data["token"], new_visitor_token)
+        self.assertFalse(init_data["is_dummy"])
+        self.assertTrue(init_data["resume_uploaded"])
+        self.assertTrue(init_data["llm_unlocked"])
+
+        # Verify all master context was copied to the new visitor session
+        visitor_ctx = self.client.get("/api/master/all", HTTP_X_SESSION_TOKEN=new_visitor_token).json()
+        self.assertEqual(visitor_ctx["profile"]["full_name"], "Jane Dummy")
+        self.assertEqual(visitor_ctx["profile"]["headline"], "Principal AI Engineer")
+        self.assertEqual(len(visitor_ctx["experiences"]), 1)
+        self.assertEqual(visitor_ctx["experiences"][0]["company"], "NeuralWorks")
+        self.assertEqual(len(visitor_ctx["educations"]), 1)
+        self.assertEqual(visitor_ctx["educations"][0]["institution"], "MIT")
+        self.assertEqual(len(visitor_ctx["skills"]), 1)
+        self.assertEqual(visitor_ctx["skills"][0]["name"], "Python")
+        self.assertEqual(len(visitor_ctx["projects"]), 1)
+        self.assertEqual(visitor_ctx["projects"][0]["title"], "ResumeForge")
+        self.assertEqual(len(visitor_ctx["certifications"]), 1)
+        self.assertEqual(visitor_ctx["certifications"][0]["name"], "AWS Solutions Architect")
+
+        # Verify job applications and tailored documents were also copied
+        visitor_jobs = self.client.get("/api/jobs", HTTP_X_SESSION_TOKEN=new_visitor_token).json()
+        self.assertEqual(len(visitor_jobs), 1)
+        self.assertEqual(visitor_jobs[0]["company_name"], "OpenAI")
+        self.assertEqual(visitor_jobs[0]["documents_count"], 1)
+
+        # Mutating the new visitor's profile must not affect the dummy user's template data
+        self.client.put(
+            "/api/master/profile",
+            data=json.dumps({
+                "full_name": "Modified Visitor Name",
+                "headline": "Visitor",
+                "email": "visitor@example.com",
+                "phone": "",
+                "location": "",
+                "website_url": "",
+                "linkedin_url": "",
+                "github_url": "",
+                "summary": "",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=new_visitor_token,
+        )
+        dummy_ctx = self.client.get("/api/master/all", HTTP_X_SESSION_TOKEN=dummy_token).json()
+        self.assertEqual(dummy_ctx["profile"]["full_name"], "Jane Dummy")
+
 

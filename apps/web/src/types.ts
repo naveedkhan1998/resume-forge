@@ -14,6 +14,7 @@ export interface Profile {
 export interface DeviceSessionStatus {
   token: string;
   username: string;
+  is_dummy?: boolean;
   resume_uploaded: boolean;
   llm_unlocked: boolean;
   llm_calls_used: number;

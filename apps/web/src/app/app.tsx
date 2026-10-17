@@ -24,12 +24,23 @@ export function App() {
   const [aiSourceMode, setAiSourceMode] = useState<AISourceMode>('offline');
   const [activeModel, setActiveModel] = useState('qwen3.5:9b');
   const [loading, setLoading] = useState(true);
+  const [wakingServer, setWakingServer] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const mainRef = React.useRef<HTMLElement>(null);
 
   const loadData = async () => {
+    setLoading(true);
     setLoadError(null);
+    const slowStartTimer = setTimeout(() => {
+      setWakingServer(true);
+    }, 2500);
     try {
+      await api.waitForHealth({
+        onWaiting: () => setWakingServer(true),
+      });
+      clearTimeout(slowStartTimer);
+      setWakingServer(false);
+
       const sess = await api.initSession().catch(() => null);
       if (sess) {
         setSessionStatus(sess);
@@ -78,6 +89,8 @@ export function App() {
       console.error('Failed to load initial app data:', err);
       setLoadError(err instanceof Error ? err.message : 'Could not load application data.');
     } finally {
+      clearTimeout(slowStartTimer);
+      setWakingServer(false);
       setLoading(false);
     }
   };
@@ -156,8 +169,14 @@ export function App() {
             </div>
           </div>
           <div className="text-center">
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Opening your workspace</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Initializing your private device session...</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {wakingServer ? 'Waking up API server...' : 'Opening your workspace'}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {wakingServer
+                ? 'Free-tier server cold start can take up to a minute. Hang tight...'
+                : 'Initializing your private device session...'}
+            </p>
           </div>
         </Card>
       </div>
