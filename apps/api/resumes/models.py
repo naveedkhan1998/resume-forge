@@ -222,3 +222,44 @@ class ItemEmbedding(models.Model):
 
     def __str__(self):
         return f"{self.item_type}:{self.item_id} embedding"
+
+
+class DeviceSession(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='device_session')
+    token = models.CharField(max_length=128, unique=True, db_index=True)
+    device_fingerprint = models.CharField(max_length=255, blank=True, default='')
+    resume_uploaded = models.BooleanField(default=False)
+    llm_calls_used = models.PositiveIntegerField(default=0)
+    llm_calls_limit = models.PositiveIntegerField(default=25)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_active_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def has_custom_ai_configured(self) -> bool:
+        ai_settings = getattr(self.user, 'ai_settings', None)
+        if ai_settings and bool((ai_settings.api_key or '').strip()):
+            return True
+        if self.device_fingerprint == "llm:personal":
+            return True
+        return False
+
+    @property
+    def is_llm_unlocked(self) -> bool:
+        if self.resume_uploaded:
+            return True
+        profile = getattr(self.user, 'profile', None)
+        if profile and (profile.raw_resume_text or '').strip():
+            return True
+        return False
+
+    @property
+    def llm_quota_remaining(self) -> Optional[int]:
+        if self.has_custom_ai_configured:
+            return None
+        if self.llm_calls_limit == 0:
+            return None
+        return max(0, self.llm_calls_limit - self.llm_calls_used)
+
+    def __str__(self):
+        return f"Session {self.token[:12]}... ({self.user.username})"
+

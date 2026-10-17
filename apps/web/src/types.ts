@@ -11,6 +11,18 @@ export interface Profile {
   raw_resume_text?: string;
 }
 
+export interface DeviceSessionStatus {
+  token: string;
+  username: string;
+  resume_uploaded: boolean;
+  llm_unlocked: boolean;
+  llm_calls_used: number;
+  llm_calls_limit: number;
+  llm_quota_remaining: number | null;
+  using_custom_ai: boolean;
+  ai_provider_mode?: 'local_ollama' | 'custom_key' | 'system_fallback';
+}
+
 export interface ParsedResumeSummary {
   name?: string;
   profile?: Partial<Profile>;
@@ -27,6 +39,7 @@ export interface ResumeUploadResult {
   mode?: 'merge' | 'replace';
   markdown_text?: string;
   parsed_summary?: ParsedResumeSummary;
+  session?: DeviceSessionStatus;
 }
 
 export interface Experience {

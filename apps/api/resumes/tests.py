@@ -1661,4 +1661,357 @@ Portfolio: https://adalovelace.dev
             self.assertEqual(msg["content"], '{"ok": true}')
 
 
+class DeviceSessionAndLLMGatingTests(TestCase):
+    def test_device_session_creates_isolated_users_with_empty_profiles(self):
+        token_a = "rf_device_alpha_token_123456"
+        token_b = "rf_device_bravo_token_654321"
+
+        init_a = self.client.post(
+            "/api/session/init",
+            data=json.dumps({"token": token_a}),
+            content_type="application/json",
+        )
+        self.assertEqual(init_a.status_code, 200)
+        data_a = init_a.json()
+        self.assertEqual(data_a["token"], token_a)
+        self.assertFalse(data_a["resume_uploaded"])
+        self.assertFalse(data_a["llm_unlocked"])
+
+        # Add profile and experience to Device A
+        self.client.put(
+            "/api/master/profile",
+            data=json.dumps({
+                "full_name": "Alice Device A",
+                "headline": "Systems Architect",
+                "email": "alice@example.com",
+                "phone": "",
+                "location": "",
+                "website_url": "",
+                "linkedin_url": "",
+                "github_url": "",
+                "summary": "Alice summary",
+            }),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=token_a,
+        )
+        self.client.post(
+            "/api/master/experiences",
+            data=json.dumps({"company": "AlphaTech", "role": "Staff Engineer"}),
+            content_type="application/json",
+            HTTP_X_SESSION_TOKEN=token_a,
+        )
+
+        # Verify Device B starts completely empty and cannot see Device A's data
+        ctx_b = self.client.get("/api/master/all", HTTP_X_SESSION_TOKEN=token_b).json()
+        self.assertEqual(ctx_b["profile"]["full_name"], "")
+        self.assertEqual(len(ctx_b["experiences"]), 0)
+
+        # Verify Device A still has its own isolated data
+        ctx_a = self.client.get("/api/master/all", HTTP_X_SESSION_TOKEN=token_a).json()
+        self.assertEqual(ctx_a["profile"]["full_name"], "Alice Device A")
+        self.assertEqual(len(ctx_a["experiences"]), 1)
+        self.assertEqual(ctx_a["experiences"][0]["company"], "AlphaTech")
+
+    @patch.object(OllamaService, "chat_json_sync")
+    def test_llm_endpoints_locked_until_resume_upload_and_enforce_quota(self, mock_chat):
+        from django.test import override_settings
+
+        token = "rf_locked_device_token_999999"
+        with override_settings(SESSION_LLM_QUOTA=3):
+            self.client.post(
+                "/api/session/init",
+                data=json.dumps({"token": token}),
+                content_type="application/json",
+            )
+
+            # 1. Before uploading a resume, downstream LLM endpoints return 403 RESUME_REQUIRED
+            refine_locked = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Engineer",
+                    "instruction": "Make it stronger",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(refine_locked.status_code, 403)
+            self.assertEqual(refine_locked.json()["code"], "RESUME_REQUIRED")
+
+            job_res = self.client.post(
+                "/api/jobs",
+                data=json.dumps({
+                    "company_name": "CloudCorp",
+                    "job_title": "Backend Engineer",
+                    "raw_description": "Python and Kubernetes",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            job_id = job_res.json()["id"]
+
+            tailor_locked = self.client.post(
+                f"/api/jobs/{job_id}/tailor",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(tailor_locked.status_code, 403)
+            self.assertEqual(tailor_locked.json()["code"], "RESUME_REQUIRED")
+
+            # 2. Uploading/parsing a resume unlocks downstream LLM endpoints and uses 1 credit (1/3)
+            mock_chat.return_value = {
+                "profile": {"full_name": "Bob Builder", "headline": "Backend Engineer"},
+                "experiences": [{"company": "BuildCo", "role": "Engineer", "bullet_points": ["Built APIs"]}],
+                "educations": [],
+                "skills": [{"category": "Backend", "skills": ["Python"]}],
+                "projects": [],
+                "certifications": [],
+            }
+            parse_res = self.client.post(
+                "/api/resumes/parse-text",
+                data=json.dumps({"raw_text": "Bob Builder - Backend Engineer at BuildCo", "mode": "replace"}),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(parse_res.status_code, 200)
+            parse_json = parse_res.json()
+            self.assertTrue(parse_json["session"]["resume_uploaded"])
+            self.assertTrue(parse_json["session"]["llm_unlocked"])
+            self.assertEqual(parse_json["session"]["llm_calls_used"], 1)
+            self.assertEqual(parse_json["session"]["llm_quota_remaining"], 2)
+
+            # 3. Now refine-section and tailor succeed and consume remaining quota (2/3 and 3/3)
+            mock_chat.return_value = {
+                "proposed_content": "Principal Backend Engineer",
+                "explanation": "Enhanced summary.",
+                "assistant_message": "Done.",
+            }
+            refine_ok = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Backend Engineer",
+                    "instruction": "Strengthen",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(refine_ok.status_code, 200)
+
+            mock_chat.return_value = {
+                "match_score": 92,
+                "extracted_keywords": ["Python"],
+                "tailoring_rationale": "Strong match.",
+                "tailored_profile": {"headline": "Backend Engineer"},
+                "tailored_experiences": [],
+                "tailored_projects": [],
+                "tailored_skills": [{"category": "Backend", "skills": ["Python"]}],
+                "cover_letter_body": "Dear Hiring Manager",
+            }
+            tailor_ok = self.client.post(
+                f"/api/jobs/{job_id}/tailor",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(tailor_ok.status_code, 200)
+
+            # 4. 4th LLM call exceeds the 3-call demo quota -> returns 429 QUOTA_EXCEEDED
+            quota_exceeded = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Backend Engineer",
+                    "instruction": "Strengthen again",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(quota_exceeded.status_code, 429)
+            self.assertEqual(quota_exceeded.json()["code"], "QUOTA_EXCEEDED")
+
+            # 5. Configuring a custom API key in settings lifts the demo quota restriction
+            self.client.post(
+                "/api/ai/settings",
+                data=json.dumps({
+                    "provider": "pydantic_gateway",
+                    "ollama_endpoint": "http://localhost:11434",
+                    "pydantic_gateway_endpoint": "https://gateway.pydantic.dev/v1",
+                    "api_key": "user_custom_key_abc",
+                    "model_name": "qwen3.5:9b",
+                    "temperature": 0.5,
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            mock_chat.return_value = {
+                "proposed_content": "Unrestricted with custom key",
+                "explanation": "Used custom key.",
+                "assistant_message": "Done.",
+            }
+            custom_key_ok = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Backend Engineer",
+                    "instruction": "Strengthen with custom key",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(custom_key_ok.status_code, 200)
+
+    def test_restore_and_new_session_endpoints(self):
+        token = "rf_portable_token_1234567890"
+        self.client.post(
+            "/api/session/init",
+            data=json.dumps({"token": token}),
+            content_type="application/json",
+        )
+
+        # Restoring an existing token returns 200
+        restore_ok = self.client.post(
+            "/api/session/restore",
+            data=json.dumps({"token": token}),
+            content_type="application/json",
+        )
+        self.assertEqual(restore_ok.status_code, 200)
+        self.assertEqual(restore_ok.json()["token"], token)
+
+        # Restoring a non-existent token returns 404
+        restore_missing = self.client.post(
+            "/api/session/restore",
+            data=json.dumps({"token": "rf_nonexistent_token_00000000"}),
+            content_type="application/json",
+        )
+        self.assertEqual(restore_missing.status_code, 404)
+
+        # Creating a new session generates a distinct token
+        new_sess = self.client.post("/api/session/new")
+        self.assertEqual(new_sess.status_code, 200)
+        self.assertNotEqual(new_sess.json()["token"], token)
+
+    @patch("resumes.services.ollama_service.httpx.Client")
+    def test_local_ollama_does_not_consume_system_credits_while_fallback_does(self, mock_client_cls):
+        from django.test import override_settings
+
+        token = "rf_local_ollama_vs_system_token_111"
+        ollama_online = {"value": True}
+
+        def fake_get(url, headers=None, **kwargs):
+            if ollama_online["value"] and "11434/api/tags" in url:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_resp.json.return_value = {"models": [{"name": "qwen3.5:9b"}]}
+                return mock_resp
+            raise httpx.ConnectError("Local Ollama offline")
+
+        def fake_post(url, headers=None, json=None, **kwargs):
+            if ollama_online["value"] and "11434/api/chat" in url:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_resp.raise_for_status.return_value = None
+                mock_resp.json.return_value = {
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            '{"profile": {"full_name": "Local User", "headline": "Engineer"}, '
+                            '"experiences": [], "educations": [], "skills": [], "projects": [], "certifications": [], '
+                            '"proposed_content": "Local refined", "explanation": "Local", "assistant_message": "Done"}'
+                        ),
+                    }
+                }
+                return mock_resp
+            if not ollama_online["value"] and "11434/api/chat" in url:
+                raise httpx.ConnectError("Local Ollama offline")
+            if "secret-system-gateway.internal" in url:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_resp.raise_for_status.return_value = None
+                mock_resp.json.return_value = {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": (
+                                    '{"proposed_content": "System fallback refined", '
+                                    '"explanation": "System", "assistant_message": "Done"}'
+                                ),
+                            }
+                        }
+                    ]
+                }
+                return mock_resp
+            raise AssertionError(f"Unexpected POST url: {url}")
+
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value.get.side_effect = fake_get
+        mock_client.__enter__.return_value.post.side_effect = fake_post
+        mock_client_cls.return_value = mock_client
+
+        with override_settings(
+            SESSION_LLM_QUOTA=2,
+            OLLAMA_BASE_URL="http://localhost:11434",
+            SYSTEM_LLM_PROVIDER="pydantic_gateway",
+            SYSTEM_LLM_BASE_URL="https://secret-system-gateway.internal/v1",
+            SYSTEM_LLM_API_KEY="system_secret_key",
+            SYSTEM_LLM_MODEL="gpt-oss:120b",
+        ):
+            self.client.post(
+                "/api/session/init",
+                data=json.dumps({"token": token}),
+                content_type="application/json",
+            )
+
+            # 1. Health check when Local Ollama is running detects personal LLM and sets unlimited quota
+            health_res = self.client.get(
+                "/api/ai/health?provider=ollama&endpoint=http://localhost:11434",
+                HTTP_X_SESSION_TOKEN=token,
+            ).json()
+            self.assertTrue(health_res["connected"])
+            self.assertTrue(health_res["session"]["using_custom_ai"])
+            self.assertEqual(health_res["session"]["ai_provider_mode"], "local_ollama")
+            self.assertIsNone(health_res["session"]["llm_quota_remaining"])
+
+            # 2. Parsing resume and refining section with Local Ollama online consumes 0 system credits
+            parse_res = self.client.post(
+                "/api/resumes/parse-text",
+                data=json.dumps({"raw_text": "Local User Resume", "mode": "replace"}),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            ).json()
+            self.assertEqual(parse_res["session"]["llm_calls_used"], 0)
+            self.assertTrue(parse_res["session"]["using_custom_ai"])
+            self.assertEqual(parse_res["session"]["ai_provider_mode"], "local_ollama")
+
+            refine_local = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Engineer",
+                    "instruction": "Refine locally",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(refine_local.status_code, 200)
+            status_after_local = self.client.get("/api/session/status", HTTP_X_SESSION_TOKEN=token).json()
+            self.assertEqual(status_after_local["llm_calls_used"], 0)
+            self.assertTrue(status_after_local["using_custom_ai"])
+
+            # 3. Now simulate Local Ollama going offline -> request falls back to SYSTEM_LLM_* and uses 1 credit
+            ollama_online["value"] = False
+            refine_fallback = self.client.post(
+                "/api/ai/refine-section",
+                data=json.dumps({
+                    "section_type": "summary",
+                    "current_content": "Engineer",
+                    "instruction": "Refine with fallback",
+                }),
+                content_type="application/json",
+                HTTP_X_SESSION_TOKEN=token,
+            )
+            self.assertEqual(refine_fallback.status_code, 200)
+            status_after_fallback = self.client.get("/api/session/status", HTTP_X_SESSION_TOKEN=token).json()
+            self.assertEqual(status_after_fallback["llm_calls_used"], 1)
+            self.assertFalse(status_after_fallback["using_custom_ai"])
+            self.assertEqual(status_after_fallback["ai_provider_mode"], "system_fallback")
+            self.assertEqual(status_after_fallback["llm_quota_remaining"], 1)
 

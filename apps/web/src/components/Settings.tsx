@@ -2,24 +2,31 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  Copy,
   Cpu,
   Database,
+  Download,
   ExternalLink,
   Eye,
   EyeOff,
+  Fingerprint,
   Globe,
   HelpCircle,
   Key,
   Loader2,
+  Lock,
+  Plus,
   Radar,
   RefreshCw,
+  RotateCcw,
   Save,
   Server,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   X,
 } from 'lucide-react';
-import { AISettings, LocalOllamaPresetStatus } from '../types';
+import { AISettings, DeviceSessionStatus, LocalOllamaPresetStatus } from '../types';
 import { api } from '../services/api';
 import { SectionHeader } from './ui/section-header';
 import { Button } from './ui/button';
@@ -28,6 +35,8 @@ import { Field, TextArea, TextInput } from './ui/field';
 
 interface SettingsProps {
   onSettingsSaved: (settings: AISettings) => void;
+  sessionStatus?: DeviceSessionStatus | null;
+  onSessionChanged?: (newSession: DeviceSessionStatus) => void;
 }
 
 const DEFAULT_SETTINGS: AISettings = {
@@ -93,7 +102,11 @@ const PYDANTIC_GATEWAY_MODEL_PRESETS = [
 
 type StatusMessage = { type: 'success' | 'error'; text: string };
 
-export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
+export const Settings: React.FC<SettingsProps> = ({
+  onSettingsSaved,
+  sessionStatus: initialSessionStatus,
+  onSessionChanged,
+}) => {
   const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
@@ -103,6 +116,23 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
   const [showGatewayHelpModal, setShowGatewayHelpModal] = useState(false);
   const [statusMsg, setStatusMsg] = useState<StatusMessage | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Device Session Token State
+  const [sessionInfo, setSessionInfo] = useState<DeviceSessionStatus | null>(
+    initialSessionStatus || null,
+  );
+  const [showSessionToken, setShowSessionToken] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [restoreTokenInput, setRestoreTokenInput] = useState('');
+  const [restoringSession, setRestoringSession] = useState(false);
+  const [creatingNewSession, setCreatingNewSession] = useState(false);
+  const [sessionMsg, setSessionMsg] = useState<StatusMessage | null>(null);
+
+  useEffect(() => {
+    if (initialSessionStatus) {
+      setSessionInfo(initialSessionStatus);
+    }
+  }, [initialSessionStatus]);
 
   const getGatewayEndpoint = (s: AISettings) =>
     s.pydantic_gateway_endpoint ||
@@ -127,6 +157,20 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
         api_key: current.api_key || '',
         probe_presets: isLocalProvider && probeLocal,
       });
+
+      if (response.session) {
+        setSessionInfo(response.session);
+        if (onSessionChanged) {
+          onSessionChanged(response.session);
+        }
+      }
+
+      if (isLocalProvider && response.connected && response.endpoint) {
+        setSettings((prev) => ({
+          ...prev,
+          ollama_endpoint: response.endpoint || prev.ollama_endpoint,
+        }));
+      }
 
       if (typeof response.system_fallback_available === 'boolean') {
         setSettings((prev) => ({
@@ -170,7 +214,7 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
 
         const providerLabel = isLocalProvider ? 'Local Ollama' : 'Pydantic AI Gateway';
         const fallbackNote = response.system_fallback_available
-          ? ' (System-level fallback LLM is active and will handle requests automatically.)'
+          ? ' (This hosted instance is for demo only — please clone https://github.com/naveedkhan1998/resume-forge and use it locally with your own models.)'
           : '';
         setStatusMsg({
           type: 'error',
@@ -209,7 +253,13 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const data = await api.getAiSettings();
+        const [data, currentSess] = await Promise.all([
+          api.getAiSettings(),
+          api.getSessionStatus().catch(() => null),
+        ]);
+        if (currentSess) {
+          setSessionInfo(currentSess);
+        }
         const normalizedProvider =
           data?.provider === 'openrouter' || data?.provider === 'pydantic_gateway'
             ? 'pydantic_gateway'
@@ -241,6 +291,93 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
 
     loadSettings();
   }, []);
+
+  const handleCopySessionToken = async () => {
+    const token = sessionInfo?.token || api.getStoredSessionToken();
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopiedToken(true);
+      setTimeout(() => setCopiedToken(false), 2000);
+    } catch {
+      setSessionMsg({ type: 'error', text: 'Could not copy token to clipboard.' });
+    }
+  };
+
+  const handleDownloadSessionToken = () => {
+    const token = sessionInfo?.token || api.getStoredSessionToken();
+    if (!token) return;
+    const content = [
+      'ResumeForge Device Session Key',
+      '==============================',
+      `Session Token: ${token}`,
+      `Exported At: ${new Date().toISOString()}`,
+      '',
+      'To restore your profile and tailored applications on another browser or device:',
+      'Open ResumeForge -> Settings -> Device Session & Portability -> Paste this token and click Restore Workspace.',
+    ].join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'resumeforge-session-key.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreSession = async () => {
+    const trimmed = restoreTokenInput.trim();
+    if (!trimmed) {
+      setSessionMsg({ type: 'error', text: 'Paste a session token to restore.' });
+      return;
+    }
+    setRestoringSession(true);
+    setSessionMsg(null);
+    try {
+      const restored = await api.restoreSession(trimmed);
+      setSessionInfo(restored);
+      setRestoreTokenInput('');
+      setSessionMsg({
+        type: 'success',
+        text: 'Workspace session restored! Reloading your profile and settings…',
+      });
+      if (onSessionChanged) {
+        onSessionChanged(restored);
+      }
+    } catch (err) {
+      setSessionMsg({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not restore session token.',
+      });
+    } finally {
+      setRestoringSession(false);
+    }
+  };
+
+  const handleStartNewSession = async () => {
+    setCreatingNewSession(true);
+    setSessionMsg(null);
+    try {
+      const created = await api.createNewSession();
+      setSessionInfo(created);
+      setSessionMsg({
+        type: 'success',
+        text: 'Created a fresh isolated device session. Save your old token if you want to switch back later.',
+      });
+      if (onSessionChanged) {
+        onSessionChanged(created);
+      }
+    } catch (err) {
+      setSessionMsg({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not create a new session.',
+      });
+    } finally {
+      setCreatingNewSession(false);
+    }
+  };
 
   const handleProviderChange = (provider: 'ollama' | 'pydantic_gateway') => {
     setAvailableModels([]);
@@ -285,6 +422,11 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
       };
       setSettings(updatedSettings);
       onSettingsSaved(updatedSettings);
+      const latestSess = await api.getSessionStatus().catch(() => null);
+      if (latestSess) {
+        setSessionInfo(latestSess);
+        if (onSessionChanged) onSessionChanged(latestSess);
+      }
       setStatusMsg({ type: 'success', text: 'Settings saved.' });
     } catch (error) {
       setStatusMsg({
@@ -300,13 +442,173 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
   const modelPresets = isOllama
     ? OLLAMA_MODEL_PRESETS.map((preset) => ({ id: preset, label: preset }))
     : PYDANTIC_GATEWAY_MODEL_PRESETS;
+  const activeSessionToken = sessionInfo?.token || api.getStoredSessionToken();
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <SectionHeader
         title="Settings"
-        description="Configure your personal Local Ollama instance or Pydantic AI Gateway connection for resume parsing, section enhancement, and job tailoring."
+        description="Manage your private device session token and configure your Local Ollama instance or Pydantic AI Gateway connection."
       />
+
+      <Panel
+        title="Device Session & Workspace Portability"
+        icon={Fingerprint}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {sessionInfo && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                  sessionInfo.llm_unlocked
+                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                    : 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                }`}
+              >
+                {sessionInfo.llm_unlocked ? (
+                  <>
+                    <Sparkles className="h-3 w-3" />
+                    AI Endpoints Unlocked
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-3 w-3" />
+                    Import Resume to Unlock AI
+                  </>
+                )}
+              </span>
+            )}
+            {sessionInfo && (
+              <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                {sessionInfo.using_custom_ai || sessionInfo.llm_quota_remaining === null
+                  ? sessionInfo.ai_provider_mode === 'local_ollama'
+                    ? 'Quota: Unlimited (Local Ollama)'
+                    : 'Quota: Unlimited (Custom AI Key)'
+                  : `Demo AI Quota: ${sessionInfo.llm_calls_used} / ${sessionInfo.llm_calls_limit} used (${sessionInfo.llm_quota_remaining} left)`}
+              </span>
+            )}
+          </div>
+        }
+      >
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <div className="space-y-3">
+            <Field
+              label="Your Device Session Token"
+              hint="Your workspace is isolated to this browser token without requiring a login. Copy or download this key to open your profile on another device."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Key className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <TextInput
+                    type={showSessionToken ? 'text' : 'password'}
+                    readOnly
+                    className="px-9 font-mono text-xs"
+                    value={activeSessionToken}
+                    aria-label="Current device session token"
+                  />
+                  <IconButton
+                    type="button"
+                    className="absolute right-1 top-1/2 -translate-y-1/2"
+                    onClick={() => setShowSessionToken((prev) => !prev)}
+                    aria-label={showSessionToken ? 'Hide session token' : 'Show session token'}
+                  >
+                    {showSessionToken ? (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                  </IconButton>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopySessionToken}
+                >
+                  {copiedToken ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedToken ? 'Copied' : 'Copy'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadSessionToken}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export key
+                </Button>
+              </div>
+            </Field>
+
+            <div className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+              <span>Want a brand-new isolated workspace on this browser?</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleStartNewSession}
+                disabled={creatingNewSession}
+              >
+                {creatingNewSession ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                New session
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Field
+              label="Restore Session from Another Device"
+              hint="Paste a previously exported session token (starting with rf_…) to switch to that workspace."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <TextInput
+                  type="text"
+                  className="min-w-0 flex-1 font-mono text-xs"
+                  placeholder="rf_…"
+                  value={restoreTokenInput}
+                  onChange={(e) => {
+                    setRestoreTokenInput(e.target.value);
+                    setSessionMsg(null);
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleRestoreSession}
+                  disabled={restoringSession || !restoreTokenInput.trim()}
+                >
+                  {restoringSession ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                  Restore workspace
+                </Button>
+              </div>
+            </Field>
+
+            {sessionMsg && (
+              <div
+                className={`flex items-start gap-2 rounded border px-3 py-2 text-xs ${
+                  sessionMsg.type === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
+                    : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200'
+                }`}
+              >
+                {sessionMsg.type === 'success' ? (
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                )}
+                <span>{sessionMsg.text}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Panel>
 
       <form onSubmit={handleSave} className="space-y-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -440,9 +742,18 @@ export const Settings: React.FC<SettingsProps> = ({ onSettingsSaved }) => {
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
                     {settings.system_fallback_available
-                      ? `If your personal LLM settings are unconfigured or unreachable, ResumeForge automatically falls back to the server environment LLM using model '${settings.system_fallback_model || 'qwen3.5:9b'}'. Server credentials and endpoints remain strictly private and hidden.`
+                      ? `This hosted instance is for demo only and uses the server fallback model '${settings.system_fallback_model || 'qwen3.5:9b'}' when no custom model is connected. To run unlimited local models with Ollama, please clone this repo and run it locally.`
                       : 'Each user can configure their own model below. Server admins can also set SYSTEM_LLM_API_KEY and SYSTEM_LLM_BASE_URL in environment variables as a hidden system-wide fallback.'}
                   </p>
+                  <a
+                    href="https://github.com/naveedkhan1998/resume-forge"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 underline hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    Clone on GitHub (naveedkhan1998/resume-forge)
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 </div>
               </div>
             </div>

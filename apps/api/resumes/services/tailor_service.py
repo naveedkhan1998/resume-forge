@@ -738,14 +738,17 @@ class TailorService:
         user: User,
         application: JobApplication,
         model_name: Optional[str] = None,
-        base_url: Optional[str] = None
+        base_url: Optional[str] = None,
+        ollama_service: Optional[OllamaService] = None,
     ) -> Dict[str, Any]:
         """Tailor resume and cover letter for a specific job application."""
         ai_settings = getattr(user, 'ai_settings', None)
         selected_model = model_name or (ai_settings.model_name if ai_settings else 'qwen3.5:9b')
 
         master_data = cls.get_user_master_data(user)
-        if base_url:
+        if ollama_service is not None:
+            ollama = ollama_service
+        elif base_url:
             ollama = OllamaService(base_url=base_url)
         else:
             ollama = OllamaService.from_user(user)

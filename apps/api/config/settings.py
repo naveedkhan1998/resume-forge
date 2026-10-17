@@ -77,16 +77,18 @@ if USE_SQLITE or DATABASE_URL.startswith('sqlite'):
 elif DATABASE_URL:
     import urllib.parse as urlparse
     url = urlparse.urlparse(DATABASE_URL)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': url.path[1:],
-            'USER': url.username,
-            'PASSWORD': url.password,
-            'HOST': url.hostname,
-            'PORT': url.port or 5432,
-        }
+    query_options = dict(urlparse.parse_qsl(url.query))
+    db_config = {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': url.path.lstrip('/'),
+        'USER': urlparse.unquote(url.username or ''),
+        'PASSWORD': urlparse.unquote(url.password or ''),
+        'HOST': url.hostname,
+        'PORT': url.port or 5432,
     }
+    if query_options:
+        db_config['OPTIONS'] = query_options
+    DATABASES = {'default': db_config}
 else:
     POSTGRES_DB = os.getenv('POSTGRES_DB', 'resumebuilder')
     POSTGRES_USER = os.getenv('POSTGRES_USER', 'postgres')
@@ -136,8 +138,17 @@ MEDIA_ROOT = ROOT_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS Settings
+from corsheaders.defaults import default_headers
+
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    'x-session-token',
+]
+
+# Device Session & Public Demo LLM Quota Settings
+SESSION_LLM_QUOTA = int(os.getenv('SESSION_LLM_QUOTA', '50'))
 
 # Celery & Redis
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')

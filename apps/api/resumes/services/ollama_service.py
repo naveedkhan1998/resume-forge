@@ -61,6 +61,8 @@ class OllamaService:
         self.timeout = timeout or getattr(settings, 'OLLAMA_TIMEOUT', 600.0)
         self.allow_system_fallback = allow_system_fallback
         self._is_system_fallback = _is_system_fallback
+        self.used_system_fallback: bool = bool(_is_system_fallback)
+        self.used_personal_llm: bool = False
 
     @staticmethod
     def _is_gateway_provider(provider: str) -> bool:
@@ -111,12 +113,20 @@ class OllamaService:
     def from_user(cls, user: Any, override_model: Optional[str] = None) -> "OllamaService":
         """Instantiate service configured from user AI settings, with hidden system-level env fallback."""
         ai_settings = getattr(user, 'ai_settings', None)
+        session = getattr(user, 'device_session', None)
+        quota_exhausted = bool(
+            session is not None
+            and session.llm_calls_limit > 0
+            and session.llm_calls_used >= session.llm_calls_limit
+        )
+        can_use_system_fallback = not quota_exhausted
+
         if not ai_settings:
-            if cls.is_system_fallback_configured():
+            if can_use_system_fallback and cls.is_system_fallback_configured():
                 fallback_svc = cls._build_system_fallback_service()
                 if fallback_svc is not None:
                     return fallback_svc
-            return cls(allow_system_fallback=True)
+            return cls(allow_system_fallback=can_use_system_fallback)
 
         provider = (getattr(ai_settings, 'provider', 'ollama') or 'ollama').lower().strip()
         user_key = (getattr(ai_settings, 'api_key', '') or '').strip()
@@ -124,7 +134,7 @@ class OllamaService:
         if cls._is_gateway_provider(provider):
             gateway_url = getattr(ai_settings, 'pydantic_gateway_endpoint', None) or getattr(ai_settings, 'openrouter_endpoint', '') or cls.DEFAULT_GATEWAY_URL
             # If the user chose gateway mode without their own API key and system fallback exists, use system fallback directly
-            if not user_key and cls.is_system_fallback_configured():
+            if not user_key and can_use_system_fallback and cls.is_system_fallback_configured():
                 fallback_svc = cls._build_system_fallback_service()
                 if fallback_svc is not None:
                     return fallback_svc
@@ -132,14 +142,15 @@ class OllamaService:
                 base_url=gateway_url,
                 api_key=user_key,
                 provider=provider,
-                allow_system_fallback=True,
+                allow_system_fallback=can_use_system_fallback,
             )
 
+        default_ollama_url = getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434') or 'http://localhost:11434'
         return cls(
-            base_url=ai_settings.ollama_endpoint or 'http://localhost:11434',
+            base_url=ai_settings.ollama_endpoint or default_ollama_url,
             api_key=user_key,
             provider='ollama',
-            allow_system_fallback=True,
+            allow_system_fallback=can_use_system_fallback,
         )
 
     def _get_headers(self) -> Dict[str, str]:
@@ -477,6 +488,8 @@ class OllamaService:
             raise primary_error
         fallback_model = self.get_system_fallback_model(fallback_default=model)
         logger.info("User LLM unavailable; routing request through system-level fallback provider.")
+        self.used_system_fallback = True
+        self.used_personal_llm = False
         return fallback_service.chat_sync(
             model=fallback_model,
             messages=messages,
@@ -552,6 +565,12 @@ class OllamaService:
             message = choices[0].get("message")
             if not isinstance(message, dict) or not str(message.get("content", "")).strip():
                 raise RuntimeError(f"{provider_label} model {effective_model} returned an empty response.")
+            if self._is_system_fallback:
+                self.used_system_fallback = True
+                self.used_personal_llm = False
+            else:
+                self.used_personal_llm = True
+                self.used_system_fallback = False
             return message
         else:
             payload = {
@@ -574,16 +593,40 @@ class OllamaService:
                     res.raise_for_status()
                     data = res.json()
             except httpx.ConnectError as exc:
-                conn_err = RuntimeError(
-                    f"Could not connect to Ollama at {endpoint_display}. Start Ollama or check your connection preset in Settings."
-                )
-                return self._try_system_fallback_chat_sync(
-                    model=model,
-                    messages=messages,
-                    temperature=temperature,
-                    format_json=format_json,
-                    primary_error=conn_err,
-                )
+                env_ollama_url = str(getattr(settings, "OLLAMA_BASE_URL", "") or "").strip().rstrip("/")
+                if (
+                    not self._is_system_fallback
+                    and env_ollama_url
+                    and env_ollama_url != self.base_url
+                ):
+                    try:
+                        with httpx.Client(timeout=client_timeout) as client:
+                            res = client.post(f"{env_ollama_url}/api/chat", headers=headers, json=payload)
+                            res.raise_for_status()
+                            data = res.json()
+                            self.base_url = env_ollama_url
+                    except Exception:
+                        conn_err = RuntimeError(
+                            f"Could not connect to Ollama at {endpoint_display}. Start Ollama or check your connection preset in Settings."
+                        )
+                        return self._try_system_fallback_chat_sync(
+                            model=model,
+                            messages=messages,
+                            temperature=temperature,
+                            format_json=format_json,
+                            primary_error=conn_err,
+                        )
+                else:
+                    conn_err = RuntimeError(
+                        f"Could not connect to Ollama at {endpoint_display}. Start Ollama or check your connection preset in Settings."
+                    )
+                    return self._try_system_fallback_chat_sync(
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        format_json=format_json,
+                        primary_error=conn_err,
+                    )
             except httpx.TimeoutException as exc:
                 raise RuntimeError(
                     f"Ollama timed out after {self.timeout:g} seconds while running {effective_model}."
@@ -597,6 +640,12 @@ class OllamaService:
             message = data.get("message")
             if not isinstance(message, dict) or not str(message.get("content", "")).strip():
                 raise RuntimeError(f"Ollama model {effective_model} returned an empty response.")
+            if self._is_system_fallback:
+                self.used_system_fallback = True
+                self.used_personal_llm = False
+            else:
+                self.used_personal_llm = True
+                self.used_system_fallback = False
             return message
 
     @staticmethod

@@ -1,6 +1,76 @@
-import { MasterContext, Profile, Experience, Education, Skill, Project, Certification, JobApplication, AISettings, ResumeUploadResult, LocalOllamaPresetStatus } from '../types';
+import {
+  MasterContext,
+  Profile,
+  Experience,
+  Education,
+  Skill,
+  Project,
+  Certification,
+  JobApplication,
+  AISettings,
+  ResumeUploadResult,
+  LocalOllamaPresetStatus,
+  DeviceSessionStatus,
+} from '../types';
 
 const API_BASE = '/api';
+const SESSION_TOKEN_STORAGE_KEY = 'resumeforge_session_token';
+const SESSION_COOKIE_NAME = 'resumeforge_session';
+
+function generateClientToken(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `rf_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
+  const randomPart = Array.from({ length: 32 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join('');
+  return `rf_${randomPart}`;
+}
+
+function syncSessionCookie(token: string) {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; path=/; max-age=31536000; SameSite=Lax`;
+}
+
+export function getStoredSessionToken(): string {
+  if (typeof window === 'undefined') return '';
+  let token = '';
+  try {
+    token = (localStorage.getItem(SESSION_TOKEN_STORAGE_KEY) || '').trim();
+  } catch {
+    token = '';
+  }
+  if (!token || token.length < 16) {
+    token = generateClientToken();
+    setStoredSessionToken(token);
+  } else {
+    syncSessionCookie(token);
+  }
+  return token;
+}
+
+export function setStoredSessionToken(token: string): void {
+  const cleaned = token.trim();
+  if (!cleaned) return;
+  try {
+    localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, cleaned);
+  } catch {
+    // Ignore storage errors in restricted contexts
+  }
+  syncSessionCookie(cleaned);
+}
+
+function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = getStoredSessionToken();
+  const headers = new Headers(init.headers || {});
+  if (token) {
+    headers.set('X-Session-Token', token);
+  }
+  return fetch(url, {
+    ...init,
+    headers,
+  });
+}
 
 async function handleResponse<T = any>(res: Response): Promise<T> {
   const text = await res.text();
@@ -29,6 +99,57 @@ async function handleResponse<T = any>(res: Response): Promise<T> {
 }
 
 export const api = {
+  // Device Session Management
+  getStoredSessionToken,
+  setStoredSessionToken,
+
+  async initSession(): Promise<DeviceSessionStatus> {
+    const token = getStoredSessionToken();
+    const res = await apiFetch(`${API_BASE}/session/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const status = await handleResponse<DeviceSessionStatus>(res);
+    if (status?.token) {
+      setStoredSessionToken(status.token);
+    }
+    return status;
+  },
+
+  async getSessionStatus(): Promise<DeviceSessionStatus> {
+    const res = await apiFetch(`${API_BASE}/session/status`);
+    const status = await handleResponse<DeviceSessionStatus>(res);
+    if (status?.token) {
+      setStoredSessionToken(status.token);
+    }
+    return status;
+  },
+
+  async restoreSession(token: string): Promise<DeviceSessionStatus> {
+    const res = await apiFetch(`${API_BASE}/session/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token.trim() }),
+    });
+    const status = await handleResponse<DeviceSessionStatus>(res);
+    if (status?.token) {
+      setStoredSessionToken(status.token);
+    }
+    return status;
+  },
+
+  async createNewSession(): Promise<DeviceSessionStatus> {
+    const res = await apiFetch(`${API_BASE}/session/new`, {
+      method: 'POST',
+    });
+    const status = await handleResponse<DeviceSessionStatus>(res);
+    if (status?.token) {
+      setStoredSessionToken(status.token);
+    }
+    return status;
+  },
+
   // AI Health & Settings
   async getAiHealth(options?: string | { provider?: string; endpoint?: string; api_key?: string; probe_presets?: boolean }) {
     let query = '';
@@ -43,9 +164,10 @@ export const api = {
       const str = params.toString();
       if (str) query = `?${str}`;
     }
-    const res = await fetch(`${API_BASE}/ai/health${query}`);
+    const res = await apiFetch(`${API_BASE}/ai/health${query}`);
     return handleResponse<{
       connected: boolean;
+      endpoint?: string;
       models?: string[];
       error?: string;
       message?: string;
@@ -53,16 +175,17 @@ export const api = {
       recommended_endpoint?: string | null;
       system_fallback_available?: boolean;
       system_fallback_model?: string | null;
+      session?: DeviceSessionStatus;
     }>(res);
   },
 
   async getAiSettings(): Promise<AISettings> {
-    const res = await fetch(`${API_BASE}/ai/settings`);
+    const res = await apiFetch(`${API_BASE}/ai/settings`);
     return handleResponse<AISettings>(res);
   },
 
   async updateAiSettings(data: AISettings) {
-    const res = await fetch(`${API_BASE}/ai/settings`, {
+    const res = await apiFetch(`${API_BASE}/ai/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -77,7 +200,7 @@ export const api = {
     conversation: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     sectionContext?: Record<string, unknown>,
   ) {
-    const res = await fetch(`${API_BASE}/ai/refine-section`, {
+    const res = await apiFetch(`${API_BASE}/ai/refine-section`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -93,7 +216,7 @@ export const api = {
 
   // Master Context
   async getMasterContext(): Promise<MasterContext> {
-    const res = await fetch(`${API_BASE}/master/all`);
+    const res = await apiFetch(`${API_BASE}/master/all`);
     return handleResponse<MasterContext>(res);
   },
 
@@ -102,7 +225,7 @@ export const api = {
     delete_applications?: boolean;
     delete_ai_settings?: boolean;
   }) {
-    const res = await fetch(`${API_BASE}/master/reset`, {
+    const res = await apiFetch(`${API_BASE}/master/reset`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -115,7 +238,7 @@ export const api = {
   },
 
   async updateProfile(profile: Profile) {
-    const res = await fetch(`${API_BASE}/master/profile`, {
+    const res = await apiFetch(`${API_BASE}/master/profile`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profile),
@@ -124,7 +247,7 @@ export const api = {
   },
 
   async createExperience(exp: Experience) {
-    const res = await fetch(`${API_BASE}/master/experiences`, {
+    const res = await apiFetch(`${API_BASE}/master/experiences`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exp),
@@ -133,7 +256,7 @@ export const api = {
   },
 
   async updateExperience(id: number, exp: Experience) {
-    const res = await fetch(`${API_BASE}/master/experiences/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/experiences/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exp),
@@ -142,14 +265,14 @@ export const api = {
   },
 
   async deleteExperience(id: number) {
-    const res = await fetch(`${API_BASE}/master/experiences/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/experiences/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
   },
 
   async createEducation(edu: Education) {
-    const res = await fetch(`${API_BASE}/master/educations`, {
+    const res = await apiFetch(`${API_BASE}/master/educations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(edu),
@@ -158,7 +281,7 @@ export const api = {
   },
 
   async updateEducation(id: number, edu: Education) {
-    const res = await fetch(`${API_BASE}/master/educations/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/educations/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(edu),
@@ -167,14 +290,14 @@ export const api = {
   },
 
   async deleteEducation(id: number) {
-    const res = await fetch(`${API_BASE}/master/educations/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/educations/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
   },
 
   async createSkill(skill: Skill) {
-    const res = await fetch(`${API_BASE}/master/skills`, {
+    const res = await apiFetch(`${API_BASE}/master/skills`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(skill),
@@ -183,14 +306,14 @@ export const api = {
   },
 
   async deleteSkill(id: number) {
-    const res = await fetch(`${API_BASE}/master/skills/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/skills/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
   },
 
   async replaceSkills(skills: Skill[]) {
-    const res = await fetch(`${API_BASE}/master/skills`, {
+    const res = await apiFetch(`${API_BASE}/master/skills`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(skills),
@@ -199,7 +322,7 @@ export const api = {
   },
 
   async createCertification(cert: Certification) {
-    const res = await fetch(`${API_BASE}/master/certifications`, {
+    const res = await apiFetch(`${API_BASE}/master/certifications`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cert),
@@ -208,7 +331,7 @@ export const api = {
   },
 
   async updateCertification(id: number, cert: Certification) {
-    const res = await fetch(`${API_BASE}/master/certifications/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/certifications/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cert),
@@ -217,14 +340,14 @@ export const api = {
   },
 
   async deleteCertification(id: number) {
-    const res = await fetch(`${API_BASE}/master/certifications/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/certifications/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
   },
 
   async replaceCertifications(certifications: Certification[]) {
-    const res = await fetch(`${API_BASE}/master/certifications`, {
+    const res = await apiFetch(`${API_BASE}/master/certifications`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(certifications),
@@ -233,7 +356,7 @@ export const api = {
   },
 
   async createProject(proj: Project) {
-    const res = await fetch(`${API_BASE}/master/projects`, {
+    const res = await apiFetch(`${API_BASE}/master/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proj),
@@ -242,7 +365,7 @@ export const api = {
   },
 
   async updateProject(id: number, proj: Project) {
-    const res = await fetch(`${API_BASE}/master/projects/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/projects/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proj),
@@ -251,7 +374,7 @@ export const api = {
   },
 
   async deleteProject(id: number) {
-    const res = await fetch(`${API_BASE}/master/projects/${id}`, {
+    const res = await apiFetch(`${API_BASE}/master/projects/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
@@ -262,7 +385,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('mode', mode);
-    const res = await fetch(`${API_BASE}/resumes/upload`, {
+    const res = await apiFetch(`${API_BASE}/resumes/upload`, {
       method: 'POST',
       body: formData,
     });
@@ -270,7 +393,7 @@ export const api = {
   },
 
   async parseResumeText(raw_text: string, mode: 'merge' | 'replace' = 'merge'): Promise<ResumeUploadResult> {
-    const res = await fetch(`${API_BASE}/resumes/parse-text`, {
+    const res = await apiFetch(`${API_BASE}/resumes/parse-text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ raw_text, mode }),
@@ -280,12 +403,12 @@ export const api = {
 
   // Job Applications
   async getJobs(): Promise<JobApplication[]> {
-    const res = await fetch(`${API_BASE}/jobs`);
+    const res = await apiFetch(`${API_BASE}/jobs`);
     return handleResponse<JobApplication[]>(res);
   },
 
   async createJob(job: { company_name: string; job_title: string; job_url?: string; raw_description?: string; notes?: string }) {
-    const res = await fetch(`${API_BASE}/jobs`, {
+    const res = await apiFetch(`${API_BASE}/jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(job),
@@ -294,12 +417,12 @@ export const api = {
   },
 
   async getJobDetail(id: number): Promise<JobApplication> {
-    const res = await fetch(`${API_BASE}/jobs/${id}`);
+    const res = await apiFetch(`${API_BASE}/jobs/${id}`);
     return handleResponse<JobApplication>(res);
   },
 
   async updateJob(id: number, data: { status?: string; notes?: string }) {
-    const res = await fetch(`${API_BASE}/jobs/${id}`, {
+    const res = await apiFetch(`${API_BASE}/jobs/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -308,21 +431,21 @@ export const api = {
   },
 
   async deleteJob(id: number) {
-    const res = await fetch(`${API_BASE}/jobs/${id}`, {
+    const res = await apiFetch(`${API_BASE}/jobs/${id}`, {
       method: 'DELETE',
     });
     return handleResponse(res);
   },
 
   async tailorJob(jobId: number) {
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/tailor`, {
+    const res = await apiFetch(`${API_BASE}/jobs/${jobId}/tailor`, {
       method: 'POST',
     });
     return handleResponse(res);
   },
 
   async updateDocumentLatex(docId: number, latex_source: string) {
-    const res = await fetch(`${API_BASE}/documents/${docId}`, {
+    const res = await apiFetch(`${API_BASE}/documents/${docId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source }),
@@ -331,7 +454,7 @@ export const api = {
   },
 
   async downloadDocumentLatex(docId: number): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/export-latex`);
+    const res = await apiFetch(`${API_BASE}/documents/${docId}/export-latex`);
     if (!res.ok) {
       await handleResponse(res);
       throw new Error('Could not download LaTeX.');
@@ -340,7 +463,7 @@ export const api = {
   },
 
   async downloadDocumentZip(docId: number): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/export-zip`);
+    const res = await apiFetch(`${API_BASE}/documents/${docId}/export-zip`);
     if (!res.ok) {
       await handleResponse(res);
       throw new Error('Could not export Overleaf ZIP.');
@@ -349,7 +472,7 @@ export const api = {
   },
 
   async downloadCustomOverleafZip(latex_source: string, company_name: string, doc_type: string): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/documents/export-zip-custom`, {
+    const res = await apiFetch(`${API_BASE}/documents/export-zip-custom`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source, company_name, doc_type }),
@@ -362,7 +485,7 @@ export const api = {
   },
 
   async getClassFile(): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/latex/resumeforge.cls`);
+    const res = await apiFetch(`${API_BASE}/latex/resumeforge.cls`);
     if (!res.ok) {
       throw new Error('Could not download resumeforge.cls.');
     }
@@ -370,13 +493,13 @@ export const api = {
   },
 
   async getClassFileContent(): Promise<string> {
-    const res = await fetch(`${API_BASE}/latex/cls-content`);
+    const res = await apiFetch(`${API_BASE}/latex/cls-content`);
     const data = await handleResponse<{ content: string }>(res);
     return data.content;
   },
 
   async reviewDocumentSections(docId: number, latex_source?: string): Promise<{ status: string; latex_source: string }> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/review-sections`, {
+    const res = await apiFetch(`${API_BASE}/documents/${docId}/review-sections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source }),
@@ -385,7 +508,7 @@ export const api = {
   },
 
   async reviewCustomLatex(latex_source: string): Promise<{ status: string; latex_source: string }> {
-    const res = await fetch(`${API_BASE}/documents/review-latex`, {
+    const res = await apiFetch(`${API_BASE}/documents/review-latex`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source }),
@@ -403,7 +526,7 @@ export const api = {
     changes_summary: string;
     keyword_coverage?: any;
   }> {
-    const res = await fetch(`${API_BASE}/documents/${docId}/ai-edit`, {
+    const res = await apiFetch(`${API_BASE}/documents/${docId}/ai-edit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -420,7 +543,7 @@ export const api = {
     instruction: string,
     target_section = 'all',
   ): Promise<{ status: string; latex_source: string; changes_summary: string }> {
-    const res = await fetch(`${API_BASE}/documents/ai-edit-latex`, {
+    const res = await apiFetch(`${API_BASE}/documents/ai-edit-latex`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ latex_source, instruction, target_section }),
@@ -428,5 +551,6 @@ export const api = {
     return handleResponse(res);
   },
 };
+
 
 

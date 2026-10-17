@@ -10,6 +10,7 @@ from .models import (
     JobApplication,
     TailoredDocument,
     ItemEmbedding,
+    DeviceSession,
 )
 
 @admin.register(Profile)
@@ -59,3 +60,10 @@ class TailoredDocumentAdmin(admin.ModelAdmin):
 @admin.register(ItemEmbedding)
 class ItemEmbeddingAdmin(admin.ModelAdmin):
     list_display = ('user', 'item_type', 'item_id', 'created_at')
+
+@admin.register(DeviceSession)
+class DeviceSessionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'token', 'resume_uploaded', 'llm_calls_used', 'llm_calls_limit', 'last_active_at', 'created_at')
+    list_filter = ('resume_uploaded',)
+    search_fields = ('user__username', 'token')
+
