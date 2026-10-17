@@ -16,6 +16,12 @@ on:
       - 'docker/**'
       - '.github/workflows/backend-docker.yml'
   workflow_dispatch:
+    inputs:
+      trigger_render_deploy:
+        description: 'Trigger Render redeployment webhook after build'
+        required: false
+        default: true
+        type: boolean
 
 env:
   DOCKERHUB_REPO: naveedkhan1998/resume-forge-backend
@@ -57,3 +63,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-render:
+    name: Deploy to Render (Manual Approval Stage)
+    needs: build-and-push
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || inputs.trigger_render_deploy)
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Trigger Render Deploy Hook
+        env:
+          RENDER_WEBHOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_WEBHOOK || secrets.RENDER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$RENDER_WEBHOOK_URL" ]; then
+            echo "::error::Missing Render deploy webhook secret. Set RENDER_DEPLOY_HOOK_URL (or RENDER_DEPLOY_WEBHOOK / RENDER_WEBHOOK_URL) in GitHub Actions repository/environment secrets."
+            exit 1
+          fi
+          echo "Triggering Render redeployment for ${{ env.DOCKERHUB_REPO }}:latest..."
+          HTTP_STATUS=$(curl -sS -o /tmp/render_deploy_response.txt -w "%{http_code}" -X POST "$RENDER_WEBHOOK_URL")
+          cat /tmp/render_deploy_response.txt
+          echo ""
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Render deploy webhook returned HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Render redeployment triggered successfully (HTTP $HTTP_STATUS)."
+
