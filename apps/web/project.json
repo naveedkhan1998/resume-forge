@@ -8,11 +8,11 @@
   "targets": {
     "deploy": {
       "dependsOn": ["build"],
-      "command": "wrangler pages deploy dist/apps/web"
+      "command": "wrangler deploy"
     },
     "preview-pages": {
       "dependsOn": ["build"],
-      "command": "wrangler pages dev dist/apps/web"
+      "command": "wrangler dev"
     }
   }
 }
