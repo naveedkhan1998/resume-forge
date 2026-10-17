@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "resume-builder",
+  "name": "resume-forge",
   "compatibility_date": "2024-11-01",
   "assets": {
     "directory": "./dist/apps/web",
