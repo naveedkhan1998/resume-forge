@@ -12,9 +12,27 @@ Tailor targeted, ATS-friendly LaTeX & PDF resumes and cover letters using local 
 [![Django Ninja](https://img.shields.io/badge/Django_Ninja-5.1-092E20?logo=django&logoColor=white)](https://django-ninja.dev/)
 [![PostgreSQL pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
 
-[Features](#-features) • [Quickstart](#-quickstart) • [Architecture](#️-architecture--monorepo-layout) • [Ollama Setup](#-ollama-configuration) • [Deployment](#-deployment) • [Contributing](#-contributing)
+[Features](#-features) • [Screenshots](#-screenshots) • [Quickstart](#-quickstart) • [Architecture](#️-architecture--monorepo-layout) • [Ollama Setup](#-ollama-configuration) • [Deployment](#-deployment) • [Contributing](#-contributing)
+
+<br />
+
+<img src="./docs/screenshots/job-tailoring-preview.png" alt="ResumeForge Job Tailoring, Keyword Coverage & Live LaTeX Preview" width="100%" />
 
 </div>
+
+---
+
+## 📸 Screenshots
+
+| **1. AI Section Refinement with Word-Level Diffs** | **2. Job Tailoring, Keyword Coverage & Live Preview** |
+| :---: | :---: |
+| <img src="./docs/screenshots/ai-section-refinement-diff.png" alt="Interactive AI Section Refinement with Diff View" width="100%" /> | <img src="./docs/screenshots/job-tailoring-preview.png" alt="Job Application Tracker and Tailored Resume Preview" width="100%" /> |
+| *Iterate on bullet points with AI and inspect word-by-word additions, removals, and rewordings before saving.* | *Analyze JD keyword coverage, view tailoring rationale, and export ATS-ready LaTeX, Overleaf ZIPs, or PDFs.* |
+
+| **3. Resume Import & Auto-Parsing** | **4. Master Career Profile** |
+| :---: | :---: |
+| <img src="./docs/screenshots/resume-import.png" alt="Resume Import and Auto-Parsing" width="100%" /> | <img src="./docs/screenshots/career-profile.png" alt="Master Career Profile" width="100%" /> |
+| *Upload existing PDF, DOCX, or TXT resumes to automatically extract structured career history and skills.* | *Maintain a single source-of-truth profile with all your roles, achievements, projects, and credentials.* |
 
 ---
 
@@ -126,6 +144,8 @@ resume-forge/
 ├── docker/
 │   ├── Dockerfile.backend      # Python 3.12 + uv + Gunicorn production/dev image
 │   └── entrypoint.sh           # Auto-enables pgvector extension & runs migrations
+├── docs/
+│   └── screenshots/            # Application UI screenshots for documentation
 ├── .github/
 │   ├── ISSUE_TEMPLATE/         # Bug report & feature request templates
 │   ├── PULL_REQUEST_TEMPLATE.md
