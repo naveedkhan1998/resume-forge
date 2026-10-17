@@ -17,7 +17,11 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = [
+    h.strip().replace('https://', '').replace('http://', '').rstrip('/')
+    for h in os.getenv('ALLOWED_HOSTS', '*').split(',')
+    if h.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -140,7 +144,18 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS Settings
 from corsheaders.defaults import default_headers
 
-CORS_ALLOW_ALL_ORIGINS = True
+_cors_origins_env = [
+    o.strip().rstrip('/')
+    for o in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
+    if o.strip()
+]
+if _cors_origins_env:
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = _cors_origins_env
+    CSRF_TRUSTED_ORIGINS = _cors_origins_env
+else:
+    CORS_ALLOW_ALL_ORIGINS = True
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     *default_headers,
