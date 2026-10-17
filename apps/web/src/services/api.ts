@@ -13,7 +13,27 @@ import {
   DeviceSessionStatus,
 } from '../types';
 
-const API_BASE = '/api';
+const DEFAULT_API_ORIGIN = 'http://localhost:8000';
+
+export function resolveApiBaseUrl(): string {
+  const env = import.meta.env;
+  const rawUrl = (
+    env.VITE_API_URL ||
+    env.VITE_API_BASE_URL ||
+    (env as Record<string, any>).API_URL ||
+    DEFAULT_API_ORIGIN
+  )
+    .toString()
+    .trim()
+    .replace(/\/+$/, '');
+
+  if (!rawUrl) {
+    return `${DEFAULT_API_ORIGIN}/api`;
+  }
+  return rawUrl.endsWith('/api') ? rawUrl : `${rawUrl}/api`;
+}
+
+const API_BASE = resolveApiBaseUrl();
 const SESSION_TOKEN_STORAGE_KEY = 'resumeforge_session_token';
 const SESSION_COOKIE_NAME = 'resumeforge_session';
 

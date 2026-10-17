@@ -23,7 +23,9 @@ export const getGaMeasurementId = (): string => {
     env.VITE_G4A_TOKEN ||
     env.VITE_GA_TRACKING_ID ||
     (env as Record<string, any>).GA_MEASUREMENT_ID ||
+    (env as Record<string, any>).GA4_MEASUREMENT_ID ||
     (env as Record<string, any>).G4A_TOKEN ||
+    (env as Record<string, any>).GOOGLE_ANALYTICS_ID ||
     ''
   ).trim();
 };
@@ -44,15 +46,6 @@ export const initGA = (): void => {
     return;
   }
 
-  // Prevent multiple script tags
-  const existingScript = document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${measurementId}"]`);
-  if (!existingScript) {
-    const script = document.createElement('script');
-    script.async = true;
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
-    document.head.appendChild(script);
-  }
-
   window.dataLayer = window.dataLayer || [];
   if (!window.gtag) {
     window.gtag = function gtag(...args: any[]) {
@@ -60,10 +53,24 @@ export const initGA = (): void => {
     };
   }
 
-  window.gtag('js', new Date());
-  window.gtag('config', measurementId, {
-    send_page_view: false, // Handled dynamically on route changes for SPA
-  });
+  // Prevent duplicate script tags if already injected in index.html at build time
+  const existingScript =
+    typeof document !== 'undefined'
+      ? document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}"]`) ||
+        document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${measurementId}"]`)
+      : null;
+
+  if (!existingScript && typeof document !== 'undefined') {
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+    document.head.appendChild(script);
+
+    window.gtag('js', new Date());
+    window.gtag('config', measurementId, {
+      send_page_view: false, // Handled dynamically on route changes for SPA
+    });
+  }
 
   isInitialized = true;
   if (import.meta.env.DEV) {

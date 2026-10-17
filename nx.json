@@ -12,7 +12,21 @@
       "!{projectRoot}/tsconfig.spec.json",
       "!{projectRoot}/src/test-setup.[jt]s"
     ],
-    "sharedGlobals": []
+    "sharedGlobals": [
+      "{workspaceRoot}/.env",
+      "{workspaceRoot}/.env.local",
+      "{workspaceRoot}/.env.production",
+      { "env": "VITE_API_URL" },
+      { "env": "VITE_API_BASE_URL" },
+      { "env": "API_URL" },
+      { "env": "VITE_GA_MEASUREMENT_ID" },
+      { "env": "VITE_GA4_MEASUREMENT_ID" },
+      { "env": "VITE_G4A_TOKEN" },
+      { "env": "VITE_GA_TRACKING_ID" },
+      { "env": "GA_MEASUREMENT_ID" },
+      { "env": "GA4_MEASUREMENT_ID" },
+      { "env": "G4A_TOKEN" }
+    ]
   },
   "plugins": [
     {
