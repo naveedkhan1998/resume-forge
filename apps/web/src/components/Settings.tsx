@@ -134,6 +134,15 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   }, [initialSessionStatus]);
 
+  useEffect(() => {
+    if (!showGatewayHelpModal) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowGatewayHelpModal(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showGatewayHelpModal]);
+
   const getGatewayEndpoint = (s: AISettings) =>
     s.pydantic_gateway_endpoint ||
     s.openrouter_endpoint ||
@@ -193,7 +202,6 @@ export const Settings: React.FC<SettingsProps> = ({
 
       if (!response.connected) {
         setAvailableModels([]);
-        // If probing found a working local Ollama preset, offer or switch to it automatically
         if (isLocalProvider && response.recommended_endpoint) {
           const workingPreset = response.presets?.find(
             (p) => p.url.replace(/\/+$/, '') === response.recommended_endpoint?.replace(/\/+$/, '')
@@ -445,45 +453,45 @@ export const Settings: React.FC<SettingsProps> = ({
   const activeSessionToken = sessionInfo?.token || api.getStoredSessionToken();
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-5 px-4 sm:px-6 lg:px-8">
       <SectionHeader
         title="Settings"
         description="Manage your private device session token and configure your Local Ollama instance or Pydantic AI Gateway connection."
       />
 
       <Panel
-        title="Device Session & Workspace Portability"
+        title="Device Session & Portability"
         icon={Fingerprint}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
+        actions={
+          <div className="flex flex-wrap items-center gap-1.5">
             {sessionInfo && (
               <span
-                className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold ${
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
                   sessionInfo.llm_unlocked
-                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
-                    : 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300'
+                    : 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/70 dark:bg-amber-950/50 dark:text-amber-300'
                 }`}
               >
                 {sessionInfo.llm_unlocked ? (
                   <>
                     <Sparkles className="h-3 w-3" />
-                    AI Endpoints Unlocked
+                    <span>AI Unlocked</span>
                   </>
                 ) : (
                   <>
                     <Lock className="h-3 w-3" />
-                    Import Resume to Unlock AI
+                    <span>Import to Unlock AI</span>
                   </>
                 )}
               </span>
             )}
             {sessionInfo && (
-              <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {sessionInfo.using_custom_ai || sessionInfo.llm_quota_remaining === null
                   ? sessionInfo.ai_provider_mode === 'local_ollama'
-                    ? 'Quota: Unlimited (Local Ollama)'
-                    : 'Quota: Unlimited (Custom AI Key)'
-                  : `Demo AI Quota: ${sessionInfo.llm_calls_used} / ${sessionInfo.llm_calls_limit} used (${sessionInfo.llm_quota_remaining} left)`}
+                    ? 'Unlimited (Local Ollama)'
+                    : 'Unlimited (Custom Key)'
+                  : `Demo Quota: ${sessionInfo.llm_quota_remaining}/${sessionInfo.llm_calls_limit} left`}
               </span>
             )}
           </div>
@@ -534,12 +542,12 @@ export const Settings: React.FC<SettingsProps> = ({
                   onClick={handleDownloadSessionToken}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Export key
+                  Export
                 </Button>
               </div>
             </Field>
 
-            <div className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
               <span>Want a brand-new isolated workspace on this browser?</span>
               <Button
                 type="button"
@@ -585,17 +593,17 @@ export const Settings: React.FC<SettingsProps> = ({
                   ) : (
                     <RotateCcw className="h-3.5 w-3.5" />
                   )}
-                  Restore workspace
+                  Restore
                 </Button>
               </div>
             </Field>
 
             {sessionMsg && (
               <div
-                className={`flex items-start gap-2 rounded border px-3 py-2 text-xs ${
+                className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
                   sessionMsg.type === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
-                    : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-200'
+                    : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-200'
                 }`}
               >
                 {sessionMsg.type === 'success' ? (
@@ -625,11 +633,11 @@ export const Settings: React.FC<SettingsProps> = ({
                     <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                       Local Ollama
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                    <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
                       Localhost, Docker bridge, or self-hosted Ollama
                     </span>
                   </span>
-                  {isOllama && <Check className="ml-auto h-4 w-4 text-slate-500" />}
+                  {isOllama && <Check className="ml-auto h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />}
                 </button>
 
                 <button
@@ -642,11 +650,11 @@ export const Settings: React.FC<SettingsProps> = ({
                     <span className="block text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                       Pydantic AI Gateway
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-slate-500">
+                    <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
                       Managed gateway for Ollama Cloud & upstream keys
                     </span>
                   </span>
-                  {!isOllama && <Check className="ml-auto h-4 w-4 text-slate-500" />}
+                  {!isOllama && <Check className="ml-auto h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />}
                 </button>
               </div>
             </Panel>
@@ -662,9 +670,9 @@ export const Settings: React.FC<SettingsProps> = ({
                 <StatusRow
                   icon={
                     statusMsg.type === 'success' ? (
-                      <Check className="h-4 w-4 text-emerald-600" />
+                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                     ) : (
-                      <AlertCircle className="h-4 w-4 text-rose-600" />
+                      <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                     )
                   }
                   title={
@@ -675,7 +683,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   description={statusMsg.text}
                 />
               ) : (
-                <p className="text-xs leading-relaxed text-slate-500">
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                   Test the connection after changing the endpoint or credentials.
                 </p>
               )}
@@ -717,33 +725,33 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
             </Panel>
 
-            <div className="space-y-3 rounded border border-slate-200 p-4 dark:border-slate-800">
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex gap-3">
                 <Server className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                    <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
                       System-level fallback
                     </p>
                     <span
-                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
                         settings.system_fallback_available
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
                       }`}
                     >
                       {settings.system_fallback_available ? 'Configured' : 'Not set'}
                     </span>
                     {settings.system_fallback_available && settings.system_fallback_model && (
-                      <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                         Model: {settings.system_fallback_model}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                     {settings.system_fallback_available
                       ? `This hosted instance is for demo only and uses the server fallback model '${settings.system_fallback_model || 'qwen3.5:9b'}' when no custom model is connected. To run unlimited local models with Ollama, please clone this repo and run it locally.`
-                      : 'Each user can configure their own model below. Server admins can also set SYSTEM_LLM_API_KEY and SYSTEM_LLM_BASE_URL in environment variables as a hidden system-wide fallback.'}
+                      : 'Each user can configure their own model below. Server admins can also set SYSTEM_LLM_API_KEY and SYSTEM_LLM_BASE_URL in environment variables as a system-wide fallback.'}
                   </p>
                   <a
                     href="https://github.com/naveedkhan1998/resume-forge"
@@ -763,7 +771,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <Panel
               title={isOllama ? 'Local Ollama connection' : 'Pydantic AI Gateway connection'}
               icon={isOllama ? Cpu : Globe}
-              action={
+              actions={
                 !isOllama ? (
                   <Button
                     type="button"
@@ -772,7 +780,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     onClick={() => setShowGatewayHelpModal(true)}
                   >
                     <HelpCircle className="h-3.5 w-3.5" />
-                    How to set up Pydantic Gateway
+                    <span>Setup guide</span>
                   </Button>
                 ) : undefined
               }
@@ -814,16 +822,16 @@ export const Settings: React.FC<SettingsProps> = ({
                 </Field>
 
                 {isOllama && (
-                  <div className="rounded border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Local Ollama Connection Presets
                       </span>
                       <button
                         type="button"
                         onClick={() => testConnection(undefined, true)}
                         disabled={testing}
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
                       >
                         <Radar className="h-3 w-3" />
                         Probe all presets
@@ -840,14 +848,14 @@ export const Settings: React.FC<SettingsProps> = ({
                             key={preset.url}
                             type="button"
                             onClick={() => handleSelectOllamaPresetUrl(preset.url)}
-                            className={`flex flex-col items-start rounded border p-2.5 text-left transition ${
+                            className={`flex flex-col items-start rounded-md border p-2.5 text-left transition ${
                               isSelected
-                                ? 'border-slate-900 bg-white shadow-xs dark:border-slate-200 dark:bg-slate-900'
-                                : 'border-slate-200 bg-white/70 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/40 dark:hover:border-slate-700'
+                                ? 'border-slate-900 bg-white shadow-xs dark:border-slate-200 dark:bg-slate-800'
+                                : 'border-slate-200 bg-white/80 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:border-slate-700'
                             }`}
                           >
                             <div className="flex w-full items-center justify-between gap-2">
-                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                                 {preset.label}
                               </span>
                               {status && (
@@ -865,7 +873,7 @@ export const Settings: React.FC<SettingsProps> = ({
                             <code className="mt-1 font-mono text-[11px] text-slate-600 dark:text-slate-300">
                               {preset.url}
                             </code>
-                            <span className="mt-1 text-[10px] leading-snug text-slate-500">
+                            <span className="mt-1 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
                               {preset.hint}
                             </span>
                           </button>
@@ -1013,16 +1021,16 @@ export const Settings: React.FC<SettingsProps> = ({
             </Panel>
 
             <Panel title="Generation defaults" icon={SlidersHorizontal}>
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Temperature</p>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
+                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200">Temperature</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                         Lower values keep generated content more deterministic.
                       </p>
                     </div>
-                    <output className="min-w-10 rounded border border-slate-200 px-2 py-1 text-center font-mono text-xs text-slate-700 dark:border-slate-800 dark:text-slate-200">
+                    <output className="min-w-10 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-center font-mono text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                       {settings.temperature.toFixed(2)}
                     </output>
                   </div>
@@ -1052,7 +1060,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   hint="Applied to tailoring and section review while preserving factual profile data."
                 >
                   <TextArea
-                    rows={4}
+                    rows={3}
                     value={settings.custom_instructions || ''}
                     onChange={(event) =>
                       setSettings({
@@ -1068,11 +1076,11 @@ export const Settings: React.FC<SettingsProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
-          <p className="text-xs text-slate-500">
-            Saving applies this provider and model to your account for future parsing and tailoring operations.
+        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3.5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Saving applies this provider and model to your session for future parsing and tailoring operations.
           </p>
-          <Button type="submit" disabled={saving} className="shrink-0">
+          <Button type="submit" disabled={saving} className="w-full sm:w-auto shrink-0">
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -1085,22 +1093,27 @@ export const Settings: React.FC<SettingsProps> = ({
 
       {showGatewayHelpModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pydantic-gateway-guide-title"
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setShowGatewayHelpModal(false);
+          }}
         >
-          <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-800">
+          <div
+            className="modal-shell max-w-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pydantic-gateway-guide-title"
+          >
+            <div className="modal-header">
               <div>
                 <h2
                   id="pydantic-gateway-guide-title"
-                  className="text-base font-semibold text-slate-900 dark:text-slate-100"
+                  className="text-sm font-semibold text-slate-900 dark:text-slate-100"
                 >
-                  How to Set Up Pydantic AI Gateway with Ollama
+                  Set Up Pydantic AI Gateway with Ollama
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Follow these 3 steps to route your LLM calls through your own Pydantic AI Gateway and Ollama account.
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Route your LLM calls through your own Pydantic AI Gateway and Ollama account.
                 </p>
               </div>
               <IconButton
@@ -1112,14 +1125,14 @@ export const Settings: React.FC<SettingsProps> = ({
               </IconButton>
             </div>
 
-            <div className="mt-5 space-y-5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-              <div className="rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+            <div className="modal-body space-y-3.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">
                   1. Create an Ollama Account & Generate an API Key
                 </p>
-                <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4">
                   <li>
-                    Sign in or create a free account at{' '}
+                    Sign in at{' '}
                     <a
                       href="https://ollama.com"
                       target="_blank"
@@ -1128,10 +1141,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     >
                       ollama.com
                     </a>
-                    .
-                  </li>
-                  <li>
-                    Navigate to{' '}
+                    {' '}and open{' '}
                     <a
                       href="https://ollama.com/settings/keys"
                       target="_blank"
@@ -1139,20 +1149,20 @@ export const Settings: React.FC<SettingsProps> = ({
                       className="font-medium underline"
                     >
                       ollama.com/settings/keys
-                    </a>{' '}
-                    and click <strong>Add API Key</strong>.
+                    </a>
+                    .
                   </li>
                   <li>
-                    Copy your generated Ollama API key — you will add this as an upstream provider credential inside Pydantic AI Gateway.
+                    Click <strong>Add API Key</strong> and copy the key for Pydantic AI Gateway.
                   </li>
                 </ol>
               </div>
 
-              <div className="rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">
                   2. Configure a Route in Pydantic AI Gateway
                 </p>
-                <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4">
                   <li>
                     Open your{' '}
                     <a
@@ -1161,40 +1171,38 @@ export const Settings: React.FC<SettingsProps> = ({
                       rel="noreferrer"
                       className="font-medium underline"
                     >
-                      Pydantic Logfire / Pydantic AI Gateway dashboard
-                    </a>{' '}
-                    and create or select a project.
+                      Pydantic Logfire / Gateway dashboard
+                    </a>
+                    .
                   </li>
                   <li>
-                    Go to <strong>AI Gateway / Upstream Providers</strong>, add a new upstream provider for <strong>Ollama</strong> (or OpenAI-compatible Ollama endpoint <code className="rounded bg-slate-200/70 px-1 py-0.5 font-mono dark:bg-slate-800">https://ollama.com/v1</code>), and paste your Ollama API key there.
+                    Add an upstream provider for <strong>Ollama</strong> (<code className="chip font-mono">https://ollama.com/v1</code>) with your Ollama key.
                   </li>
                   <li>
-                    Create a <strong>Gateway API Key</strong> for your route and copy the <strong>Gateway Connection URL / Base URL</strong> (for example <code className="rounded bg-slate-200/70 px-1 py-0.5 font-mono dark:bg-slate-800">https://gateway.pydantic.dev/v1</code> or your custom project proxy URL).
+                    Create a <strong>Gateway API Key</strong> and copy the <strong>Gateway Connection URL</strong>.
                   </li>
                 </ol>
               </div>
 
-              <div className="rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
                 <p className="font-semibold text-slate-900 dark:text-slate-100">
-                  3. Connect Your Gateway in ResumeForge
+                  3. Connect in ResumeForge
                 </p>
-                <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4">
                   <li>
-                    Paste the <strong>Pydantic Gateway Connection URL</strong> into the <strong>Pydantic Gateway Connection URL</strong> field on this page.
+                    Paste the Gateway Connection URL and Gateway API Key on this page.
                   </li>
                   <li>
-                    Paste your <strong>Pydantic Gateway API Key</strong> into the <strong>Pydantic Gateway API Key</strong> field.
-                  </li>
-                  <li>
-                    Enter or select the upstream model name (such as <code className="rounded bg-slate-200/70 px-1 py-0.5 font-mono dark:bg-slate-800">qwen3.5:9b</code> or <code className="rounded bg-slate-200/70 px-1 py-0.5 font-mono dark:bg-slate-800">llama3.3:70b</code>), click <strong>Test connection</strong>, and click <strong>Save settings</strong>.
+                    Choose a model preset, click <strong>Test connection</strong>, and click <strong>Save settings</strong>.
                   </li>
                 </ol>
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="modal-footer justify-end">
               <Button
                 type="button"
+                size="sm"
                 onClick={() => setShowGatewayHelpModal(false)}
               >
                 Got it
@@ -1215,8 +1223,8 @@ const StatusRow: React.FC<{
   <div className="flex items-start gap-3">
     <span className="mt-0.5 shrink-0">{icon}</span>
     <div>
-      <p className="text-[13px] font-medium text-slate-700 dark:text-slate-200">{title}</p>
-      <p className="mt-1 text-xs leading-relaxed text-slate-500">{description}</p>
+      <p className="text-[13px] font-medium text-slate-800 dark:text-slate-200">{title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
     </div>
   </div>
 );

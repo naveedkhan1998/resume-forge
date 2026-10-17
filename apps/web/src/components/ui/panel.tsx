@@ -9,6 +9,7 @@ interface PanelProps {
   icon?: IconType;
   count?: number;
   actions?: React.ReactNode;
+  action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
@@ -19,24 +20,32 @@ export const Panel: React.FC<PanelProps> = ({
   icon: Icon,
   count,
   actions,
+  action,
   children,
   className,
   bodyClassName,
-}) => (
-  <section className={clsx('panel', className)}>
-    {title && (
-      <header className="panel-head">
-        <div className="flex min-w-0 items-center gap-2">
-          {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-400" />}
-          <h2 className="truncate text-sm font-semibold text-slate-900">{title}</h2>
-          {typeof count === 'number' && <span className="panel-count">{count}</span>}
-        </div>
-        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-      </header>
-    )}
-    <div className={clsx('p-4 sm:p-5', bodyClassName)}>{children}</div>
-  </section>
-);
+}) => {
+  const headerActions = actions ?? action;
+  return (
+    <section className={clsx('panel', className)}>
+      {title && (
+        <header className="panel-head">
+          <div className="flex min-w-0 items-center gap-2">
+            {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />}
+            <h2 className="truncate text-[13px] sm:text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {title}
+            </h2>
+            {typeof count === 'number' && <span className="panel-count">{count}</span>}
+          </div>
+          {headerActions && (
+            <div className="flex flex-wrap shrink-0 items-center gap-1.5">{headerActions}</div>
+          )}
+        </header>
+      )}
+      <div className={clsx('p-3.5 sm:p-5', bodyClassName)}>{children}</div>
+    </section>
+  );
+};
 
 interface EmptyStateProps {
   title: string;
@@ -45,9 +54,13 @@ interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({ title, hint, action }) => (
-  <div className="rounded border border-dashed border-slate-300 px-4 py-8 text-center">
-    <p className="text-[13px] font-medium text-slate-600">{title}</p>
-    {hint && <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-400">{hint}</p>}
+  <div className="rounded-lg border border-dashed border-slate-300 px-4 py-7 text-center dark:border-slate-700/80">
+    <p className="text-[13px] font-medium text-slate-700 dark:text-slate-300">{title}</p>
+    {hint && (
+      <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+        {hint}
+      </p>
+    )}
     {action && <div className="mt-3 flex justify-center">{action}</div>}
   </div>
 );
@@ -61,7 +74,7 @@ export const RefineButton: React.FC<ButtonProps & { label?: string }> = ({
 }) => (
   <button type="button" className={clsx('quiet-btn', className)} {...props}>
     <Wand2 className="h-3.5 w-3.5" />
-    {label}
+    <span>{label}</span>
   </button>
 );
 
@@ -87,7 +100,7 @@ export const RowActions: React.FC<{ children: React.ReactNode; className?: strin
 }) => (
   <div
     className={clsx(
-      'flex shrink-0 items-center gap-1 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100',
+      'flex shrink-0 items-center gap-0.5 sm:gap-1 transition-opacity focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100',
       className,
     )}
   >

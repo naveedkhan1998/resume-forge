@@ -76,19 +76,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      <header className="app-header sticky top-0 z-40 border-b">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8">
+      <header className="app-header shrink-0 md:sticky md:top-0 z-40 border-b">
+        <div className="mx-auto flex h-13 sm:h-14 max-w-7xl items-center gap-3 sm:gap-6 px-3.5 sm:px-6 lg:px-8">
           <Link
             to="/profile"
-            className="flex shrink-0 items-center gap-2.5 text-left"
+            className="flex shrink-0 items-center gap-2 text-left"
             aria-label="Open profile"
           >
             <img
               src="/icon.svg"
               alt="ResumeForge Logo"
-              className="h-7 w-7 rounded object-contain shadow-xs"
+              className="h-6 w-6 sm:h-7 sm:w-7 rounded object-contain shadow-xs"
             />
-            <span className="hidden text-sm font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:block">
+            <span className="text-[13px] sm:text-sm font-semibold tracking-tight text-slate-950 dark:text-slate-50">
               ResumeForge
             </span>
           </Link>
@@ -113,11 +113,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             {sessionStatus && !sessionStatus.llm_unlocked && (
               <Link
                 to="/import"
-                className="hidden items-center gap-1.5 rounded border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[11px] font-medium text-amber-800 transition-colors hover:bg-amber-100/80 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 lg:inline-flex"
+                className="hidden items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-[11px] font-medium text-amber-800 transition-colors hover:bg-amber-100/80 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300 lg:inline-flex"
                 title="Import your resume first to unlock AI tailoring and refinement endpoints"
               >
                 <Lock className="h-3 w-3 shrink-0" />
@@ -127,9 +127,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <Link
               to="/settings"
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs transition-colors ${
                 !aiConnected || effectiveSourceMode === 'offline'
-                  ? 'border-slate-200 bg-slate-100/80 text-slate-600 hover:bg-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                  ? 'border-slate-200 bg-slate-100/80 text-slate-600 hover:bg-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
                   : isOwnModel
                     ? 'border-emerald-200 bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100/80 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300'
                     : 'border-indigo-200 bg-indigo-50/80 text-indigo-800 hover:bg-indigo-100/80 dark:border-indigo-800/70 dark:bg-indigo-950/40 dark:text-indigo-300'
@@ -154,35 +154,38 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : effectiveSourceMode === 'local_ollama' ? (
                 <>
                   <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                  <Cpu className="h-3.5 w-3.5 shrink-0" />
-                  <span className="font-semibold">Own Model (Local)</span>
-                  <span className="hidden text-emerald-600/70 dark:text-emerald-400/70 sm:inline">·</span>
-                  <span className="hidden font-mono text-[11px] sm:inline">{activeModel}</span>
-                  <span className="hidden rounded bg-emerald-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900/70 dark:text-emerald-200 md:inline">
+                  <Cpu className="hidden h-3.5 w-3.5 shrink-0 sm:inline" />
+                  <span className="font-semibold sm:hidden">Local AI</span>
+                  <span className="hidden font-semibold sm:inline">Own Model (Local)</span>
+                  <span className="hidden text-emerald-600/70 dark:text-emerald-400/70 md:inline">·</span>
+                  <span className="hidden font-mono text-[11px] md:inline">{activeModel}</span>
+                  <span className="hidden rounded bg-emerald-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900/70 dark:text-emerald-200 lg:inline">
                     Unlimited
                   </span>
                 </>
               ) : effectiveSourceMode === 'custom_key' ? (
                 <>
                   <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                  <Key className="h-3.5 w-3.5 shrink-0" />
-                  <span className="font-semibold">Own Model (API Key)</span>
-                  <span className="hidden text-emerald-600/70 dark:text-emerald-400/70 sm:inline">·</span>
-                  <span className="hidden font-mono text-[11px] sm:inline">{activeModel}</span>
-                  <span className="hidden rounded bg-emerald-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900/70 dark:text-emerald-200 md:inline">
+                  <Key className="hidden h-3.5 w-3.5 shrink-0 sm:inline" />
+                  <span className="font-semibold sm:hidden">Custom AI</span>
+                  <span className="hidden font-semibold sm:inline">Own Model (API Key)</span>
+                  <span className="hidden text-emerald-600/70 dark:text-emerald-400/70 md:inline">·</span>
+                  <span className="hidden font-mono text-[11px] md:inline">{activeModel}</span>
+                  <span className="hidden rounded bg-emerald-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-900 dark:bg-emerald-900/70 dark:text-emerald-200 lg:inline">
                     Unlimited
                   </span>
                 </>
               ) : (
                 <>
                   <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
-                  <Cloud className="h-3.5 w-3.5 shrink-0" />
-                  <span className="font-semibold">System Model</span>
-                  <span className="hidden text-indigo-600/70 dark:text-indigo-400/70 sm:inline">·</span>
-                  <span className="hidden font-mono text-[11px] sm:inline">{activeModel}</span>
+                  <Cloud className="hidden h-3.5 w-3.5 shrink-0 sm:inline" />
+                  <span className="font-semibold sm:hidden">Demo AI</span>
+                  <span className="hidden font-semibold sm:inline">System Model</span>
+                  <span className="hidden text-indigo-600/70 dark:text-indigo-400/70 md:inline">·</span>
+                  <span className="hidden font-mono text-[11px] md:inline">{activeModel}</span>
                   {sessionStatus && sessionStatus.llm_quota_remaining !== null && (
                     <span className="rounded bg-indigo-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-indigo-900 dark:bg-indigo-900/70 dark:text-indigo-200">
-                      {sessionStatus.llm_quota_remaining}/{sessionStatus.llm_calls_limit} left
+                      {sessionStatus.llm_quota_remaining}/{sessionStatus.llm_calls_limit}
                     </span>
                   )}
                 </>
@@ -193,7 +196,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               href="https://github.com/naveedkhan1998/resume-forge"
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden items-center gap-1.5 rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white sm:inline-flex"
+              className="hidden items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white sm:inline-flex"
               title="Clone ResumeForge on GitHub to run locally with your own models"
             >
               <svg
@@ -208,7 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={onThemeToggle}
-              className="flex h-8 w-8 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             >
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -217,7 +220,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </header>
 
-      <nav className="mobile-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:hidden" aria-label="Primary navigation">
+      <nav
+        className="mobile-nav z-40 grid grid-cols-4 md:hidden"
+        aria-label="Primary navigation"
+      >
         {navItems.map(({ path, label, icon: Icon }) => {
           const active = isItemActive(path);
           return (
@@ -225,14 +231,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               key={path}
               to={path}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
+              className={`relative flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors ${
                 active
                   ? 'text-slate-950 dark:text-white'
-                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
-              {label}
+              {active && (
+                <span className="absolute top-0 h-0.5 w-8 rounded-full bg-slate-950 dark:bg-white" />
+              )}
+              <Icon className={`h-[18px] w-[18px] ${active ? 'stroke-[2.25]' : 'stroke-[1.75]'}`} />
+              <span>{label}</span>
             </Link>
           );
         })}

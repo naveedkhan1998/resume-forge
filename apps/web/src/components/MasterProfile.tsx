@@ -34,6 +34,7 @@ import {
   GitCompare,
   ExternalLink,
   GitBranch,
+  Pencil,
 } from 'lucide-react';
 
 interface MasterProfileProps {
@@ -44,6 +45,7 @@ interface MasterProfileProps {
 
 type RefineTargetKind = 'summary' | 'experience' | 'project' | 'education' | 'skills' | 'certifications';
 type RefineMessage = { role: 'user' | 'assistant'; content: string };
+type MobileProfileSection = 'all' | 'experience' | 'personal' | 'skills' | 'projects' | 'education' | 'certifications';
 
 const contentItems = (content: unknown): string[] => {
   if (typeof content === 'string') return content ? [content] : [];
@@ -67,8 +69,8 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [profile, setProfile] = useState<Profile>(context.profile);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [mobileSection, setMobileSection] = useState<MobileProfileSection>('all');
 
-  // Synchronize local form state whenever context.profile updates from API/Upload
   useEffect(() => {
     if (context.profile) {
       setProfile(context.profile);
@@ -104,15 +106,18 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!resetOpen) return;
+    if (!resetOpen && !refineModalOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !resetting) setResetOpen(false);
+      if (event.key === 'Escape') {
+        if (resetOpen && !resetting) setResetOpen(false);
+        if (refineModalOpen && !refining && !savingRefine) setRefineModalOpen(false);
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [resetOpen, resetting]);
+  }, [resetOpen, resetting, refineModalOpen, refining, savingRefine]);
 
   // Experience Add/Edit state
   const emptyExp: Experience = {
@@ -169,7 +174,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
   const [newCertOpen, setNewCertOpen] = useState(false);
   const [newCert, setNewCert] = useState<Certification>(emptyCert);
 
-  // New Skill Modal
+  // New Skill Inline Form
   const [newSkillOpen, setNewSkillOpen] = useState(false);
   const [newSkill, setNewSkill] = useState<Skill>({
     category: 'Technical Skills',
@@ -498,10 +503,21 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
         contextWithTech,
       );
       setRefineDraftContent(res.proposed_content);
+      const nextTech =
+        Array.isArray(res.proposed_technologies) && res.proposed_technologies.length > 0
+          ? res.proposed_technologies
+          : refineProposedTech;
       if (Array.isArray(res.proposed_technologies) && res.proposed_technologies.length > 0) {
         setRefineProposedTech(res.proposed_technologies);
       }
-      setRefineExplanation(res.explanation || '');
+      const nextDiff = diffLines(contentItems(refineOriginalContent), contentItems(res.proposed_content));
+      const nextTechChanged =
+        (refineTargetKind === 'experience' || refineTargetKind === 'project') &&
+        refineOriginalTech.join('|') !== nextTech.join('|');
+      if (nextDiff.added + nextDiff.removed + nextDiff.changed + (nextTechChanged ? 1 : 0) > 0) {
+        setRefinePanel('diff');
+      }
+      setRefineExplanation(res.assistant_message || res.explanation || 'Draft updated.');
       setRefineMessages((current) => [
         ...current,
         { role: 'user', content: instruction },
@@ -605,35 +621,35 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     refineOriginalTech.join('|') !== refineProposedTech.join('|');
   const refineChangeCount = refineDiff.added + refineDiff.removed + refineDiff.changed + (techChanged ? 1 : 0);
 
-  const quickPresetsByKind: Record<RefineTargetKind, string[]> = {
+  const quickPresetsByKind: Record<RefineTargetKind, Array<{ label: string; prompt: string }>> = {
     summary: [
-      'Write a punchy 2-3 sentence summary grounded in my experience and core strengths',
-      'Make it more concise and ATS-friendly without generic buzzwords',
-      'Emphasize leadership, domain expertise, and measurable impact',
+      { label: 'Punchy 2-3 sentences', prompt: 'Write a punchy 2-3 sentence summary grounded in my experience and core strengths' },
+      { label: 'Concise & ATS-clean', prompt: 'Make it more concise and ATS-friendly without generic buzzwords' },
+      { label: 'Highlight impact', prompt: 'Emphasize leadership, domain expertise, and measurable impact' },
     ],
     experience: [
-      'Strengthen action verbs, highlight scope & expertise, and keep every metric intact',
-      'Make bullets tighter (1-2 lines each) for a 1-page resume',
-      'Extract any tools, methods, or technologies mentioned in bullets into the tags list',
-      'Reorder bullets by strongest impact and outcomes first',
+      { label: 'Strengthen action verbs', prompt: 'Strengthen action verbs, highlight scope & expertise, and keep every metric intact' },
+      { label: 'Tighten for 1-page', prompt: 'Make bullets tighter (1-2 lines each) for a 1-page resume' },
+      { label: 'Extract tech tags', prompt: 'Extract any tools, methods, or technologies mentioned in bullets into the tags list' },
+      { label: 'Order by impact', prompt: 'Reorder bullets by strongest impact and outcomes first' },
     ],
     project: [
-      'Highlight key contributions, methods or tools used, and concrete outcomes',
-      'Condense into 2-3 high-impact bullets suitable for a 1-page resume',
-      'Extract all tools, media, or technologies used into the project tags list',
+      { label: 'Highlight outcomes', prompt: 'Highlight key contributions, methods or tools used, and concrete outcomes' },
+      { label: 'Condense to 2-3 bullets', prompt: 'Condense into 2-3 high-impact bullets suitable for a 1-page resume' },
+      { label: 'Extract tech tags', prompt: 'Extract all tools, media, or technologies used into the project tags list' },
     ],
     education: [
-      'Tighten academic coursework, clinical rotations, honors, and awards into concise bullets',
-      'Keep only the highest-signal academic highlights',
+      { label: 'Tighten highlights', prompt: 'Tighten academic coursework, clinical rotations, honors, and awards into concise bullets' },
+      { label: 'Keep highest-signal', prompt: 'Keep only the highest-signal academic highlights' },
     ],
     skills: [
-      'Group into clean categories suited to my profession & remove duplicates',
-      'Add any missing skills, tools, or competencies mentioned in my experiences and projects',
-      'Standardize naming and capitalization across all skills',
+      { label: 'Group & deduplicate', prompt: 'Group into clean categories suited to my profession & remove duplicates' },
+      { label: 'Add missing from roles', prompt: 'Add any missing skills, tools, or competencies mentioned in my experiences and projects' },
+      { label: 'Standardize naming', prompt: 'Standardize naming and capitalization across all skills' },
     ],
     certifications: [
-      'Standardize certification and license names and issuer formatting',
-      'Remove duplicate credentials',
+      { label: 'Standardize formatting', prompt: 'Standardize certification and license names and issuer formatting' },
+      { label: 'Remove duplicates', prompt: 'Remove duplicate credentials' },
     ],
   };
 
@@ -650,15 +666,14 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     );
   }, [context.skills]);
 
+  const showSection = (sec: Exclude<MobileProfileSection, 'all'>) =>
+    mobileSection === 'all' || mobileSection === sec;
+
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
       <SectionHeader
         title="Career profile"
-        description={
-          <>
-            Keep your experience, education, skills, and links in one editable profile.
-          </>
-        }
+        description="Keep your experience, education, skills, and links in one editable profile."
         actions={
           <button
             onClick={() => {
@@ -668,686 +683,419 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               setResetAiSettings(false);
               setResetOpen(true);
             }}
-            className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-rose-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-rose-300"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-rose-900/60 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete data
+            <span>Delete data</span>
           </button>
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Responsive stats strip */}
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 sm:gap-3">
         {[
-          { label: 'Experience', value: context.experiences.length, icon: Briefcase },
-          { label: 'Skills', value: context.skills.length, icon: Wrench },
-          { label: 'Projects', value: context.projects.length, icon: FolderGit2 },
-          { label: 'Education', value: context.educations.length, icon: GraduationCap },
-          { label: 'Credentials', value: context.certifications.length, icon: Award },
-        ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="stat-tile">
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <Icon className="h-3.5 w-3.5" />
-              <span className="text-[11px] font-medium">{label}</span>
+          { key: 'experience' as const, label: 'Experience', value: context.experiences.length, icon: Briefcase },
+          { key: 'skills' as const, label: 'Skills', value: context.skills.length, icon: Wrench },
+          { key: 'projects' as const, label: 'Projects', value: context.projects.length, icon: FolderGit2 },
+          { key: 'education' as const, label: 'Education', value: context.educations.length, icon: GraduationCap },
+          { key: 'certifications' as const, label: 'Credentials', value: context.certifications.length, icon: Award },
+        ].map(({ key, label, value, icon: Icon }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setMobileSection((curr) => (curr === key ? 'all' : key))}
+            className={`stat-tile text-left transition-colors xl:cursor-default ${
+              mobileSection === key
+                ? 'border-slate-900 ring-1 ring-slate-900 dark:border-slate-200 dark:ring-slate-200 xl:border-slate-200 xl:ring-0 dark:xl:border-slate-800'
+                : ''
+            }`}
+          >
+            <div className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500">
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate text-[11px] font-medium">{label}</span>
             </div>
-            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+            <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
               {value}
             </p>
-          </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Mobile / Tablet section filter pills so users don't have to scroll endlessly */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:hidden">
+        {(
+          [
+            { id: 'all', label: 'All sections' },
+            { id: 'experience', label: `Experience (${context.experiences.length})` },
+            { id: 'personal', label: 'Personal' },
+            { id: 'skills', label: `Skills (${context.skills.length})` },
+            { id: 'projects', label: `Projects (${context.projects.length})` },
+            { id: 'education', label: `Education (${context.educations.length})` },
+            { id: 'certifications', label: `Credentials (${context.certifications.length})` },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setMobileSection(tab.id)}
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              mobileSection === tab.id
+                ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
-        {/* Left column: identity, skills, supporting work */}
+        {/* Left column on XL: identity, skills, supporting work */}
         <div className="space-y-5 xl:col-span-2">
-          <Panel title="Personal details" icon={User}>
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <Field label="Full name">
-                <TextInput
-                  type="text"
-                  value={profile.full_name}
-                  onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                  placeholder="Jane Doe"
-                />
-              </Field>
+          <div className={showSection('personal') ? 'block' : 'hidden xl:block'}>
+            <Panel title="Personal details" icon={User}>
+              <form onSubmit={handleSaveProfile} className="space-y-3.5">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <Field label="Full name">
+                    <TextInput
+                      type="text"
+                      value={profile.full_name}
+                      onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
+                      placeholder="Jane Doe"
+                    />
+                  </Field>
 
-              <Field label="Headline">
-                <TextInput
-                  type="text"
-                  value={profile.headline}
-                  onChange={(e) => setProfile({ ...profile, headline: e.target.value })}
-                  placeholder="Senior Full-Stack Engineer"
-                />
-              </Field>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Email">
-                  <TextInput
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                    placeholder="jane@example.com"
-                  />
-                </Field>
-                <Field label="Phone">
-                  <TextInput
-                    type="text"
-                    value={profile.phone}
-                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                    placeholder="+1 555 010 1234"
-                  />
-                </Field>
-              </div>
-
-              <Field label="Location">
-                <TextInput
-                  type="text"
-                  value={profile.location}
-                  onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                  placeholder="San Francisco, CA"
-                />
-              </Field>
-
-              <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-                <p className="group-label">Links</p>
-                <Field label="LinkedIn">
-                  <TextInput
-                    type="text"
-                    value={profile.linkedin_url}
-                    onChange={(e) => setProfile({ ...profile, linkedin_url: e.target.value })}
-                    placeholder="linkedin.com/in/username"
-                  />
-                </Field>
-                <Field label="GitHub">
-                  <TextInput
-                    type="text"
-                    value={profile.github_url}
-                    onChange={(e) => setProfile({ ...profile, github_url: e.target.value })}
-                    placeholder="github.com/username"
-                  />
-                </Field>
-                <Field label="Website">
-                  <TextInput
-                    type="text"
-                    value={profile.website_url || ''}
-                    onChange={(e) => setProfile({ ...profile, website_url: e.target.value })}
-                    placeholder="janedoe.dev"
-                  />
-                </Field>
-              </div>
-
-              <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label htmlFor="profile-summary" className="field-label mb-0">
-                    Professional summary
-                  </label>
-                  <RefineButton onClick={openAiRefineForSummary} />
+                  <Field label="Headline">
+                    <TextInput
+                      type="text"
+                      value={profile.headline}
+                      onChange={(e) => setProfile({ ...profile, headline: e.target.value })}
+                      placeholder="Senior Full-Stack Engineer"
+                    />
+                  </Field>
                 </div>
-                <TextArea
-                  id="profile-summary"
-                  rows={5}
-                  value={profile.summary}
-                  onChange={(e) => setProfile({ ...profile, summary: e.target.value })}
-                  placeholder="Two or three sentences on what you build, the scale you work at, and the impact you aim for."
-                />
-              </div>
 
-              <Button type="submit" disabled={savingProfile} className="w-full">
-                {savingProfile ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Saving
-                  </>
-                ) : profileSaved ? (
-                  <>
-                    <Check className="h-4 w-4" /> Saved
-                  </>
-                ) : (
-                  'Save profile'
-                )}
-              </Button>
-            </form>
-          </Panel>
-
-          <Panel
-            title="Skills"
-            icon={Wrench}
-            count={context.skills.length}
-            actions={
-              <>
-                <RefineButton onClick={openAiRefineForSkills} />
-                <IconButton onClick={() => setNewSkillOpen((open) => !open)} aria-label="Add skill">
-                  <Plus className="h-4 w-4" />
-                </IconButton>
-              </>
-            }
-          >
-            {newSkillOpen && (
-              <div className="inline-form mb-4 space-y-3">
-                <Field label="Skill">
-                  <TextInput
-                    type="text"
-                    autoFocus
-                    placeholder="Python"
-                    value={newSkill.name}
-                    onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddSkill();
-                      }
-                    }}
-                  />
-                </Field>
-                <Field label="Category">
-                  <TextInput
-                    type="text"
-                    placeholder="Languages"
-                    value={newSkill.category}
-                    onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
-                  />
-                </Field>
-                <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setNewSkillOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleAddSkill} disabled={!newSkill.name.trim()}>
-                    Add skill
-                  </Button>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Email">
+                    <TextInput
+                      type="email"
+                      value={profile.email}
+                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                      placeholder="jane@example.com"
+                    />
+                  </Field>
+                  <Field label="Phone">
+                    <TextInput
+                      type="text"
+                      value={profile.phone}
+                      onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                      placeholder="+1 555 010 1234"
+                    />
+                  </Field>
                 </div>
-              </div>
-            )}
 
-            {context.skills.length === 0 ? (
-              <EmptyState
-                title="No skills yet"
-                hint="Add them one at a time, or import a resume and let the parser fill this in."
-              />
-            ) : (
-              <div className="max-h-96 space-y-4 overflow-y-auto pr-1">
-                {skillGroups.map((group) => (
-                  <div key={group.category}>
-                    <p className="group-label mb-2">
-                      {group.category} · {group.skills.length}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {group.skills.map((skill) => (
-                        <span key={skill.id ?? skill.name} className="skill-chip group">
-                          {skill.name}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSkill(skill.id)}
-                            aria-label={`Remove ${skill.name}`}
-                            className="text-slate-400 transition-colors hover:text-rose-600 md:opacity-0 md:group-hover:opacity-100"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
+                <Field label="Location">
+                  <TextInput
+                    type="text"
+                    value={profile.location}
+                    onChange={(e) => setProfile({ ...profile, location: e.target.value })}
+                    placeholder="San Francisco, CA"
+                  />
+                </Field>
+
+                <div className="space-y-3 border-t border-slate-200 pt-3.5 dark:border-slate-800">
+                  <p className="group-label">Links</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                    <Field label="LinkedIn">
+                      <TextInput
+                        type="text"
+                        value={profile.linkedin_url}
+                        onChange={(e) => setProfile({ ...profile, linkedin_url: e.target.value })}
+                        placeholder="linkedin.com/in/username"
+                      />
+                    </Field>
+                    <Field label="GitHub">
+                      <TextInput
+                        type="text"
+                        value={profile.github_url}
+                        onChange={(e) => setProfile({ ...profile, github_url: e.target.value })}
+                        placeholder="github.com/username"
+                      />
+                    </Field>
+                    <Field label="Website">
+                      <TextInput
+                        type="text"
+                        value={profile.website_url || ''}
+                        onChange={(e) => setProfile({ ...profile, website_url: e.target.value })}
+                        placeholder="janedoe.dev"
+                      />
+                    </Field>
                   </div>
-                ))}
-              </div>
-            )}
-          </Panel>
+                </div>
 
-          <Panel
-            title="Projects"
-            icon={FolderGit2}
-            count={context.projects.length}
-            actions={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditingProjectId(null);
-                  setNewProject(emptyProject);
-                  setNewProjectOpen((open) => !open);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
-              </Button>
-            }
-          >
-            {newProjectOpen && (
-              <div className="inline-form mb-4 space-y-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Project title">
-                    <TextInput
-                      type="text"
-                      autoFocus
-                      placeholder="ResumeForge AI"
-                      value={newProject.title}
-                      onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Subtitle / Role">
-                    <TextInput
-                      type="text"
-                      placeholder="Creator & Lead Developer"
-                      value={newProject.subtitle || ''}
-                      onChange={(e) => setNewProject({ ...newProject, subtitle: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Repository URL">
-                    <TextInput
-                      type="text"
-                      placeholder="https://github.com/..."
-                      value={newProject.repo_url || ''}
-                      onChange={(e) => setNewProject({ ...newProject, repo_url: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Live URL">
-                    <TextInput
-                      type="text"
-                      placeholder="https://..."
-                      value={newProject.live_url || ''}
-                      onChange={(e) => setNewProject({ ...newProject, live_url: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                <Field label="Highlights — one per line">
+                <div className="border-t border-slate-200 pt-3.5 dark:border-slate-800">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <label htmlFor="profile-summary" className="field-label mb-0">
+                      Professional summary
+                    </label>
+                    <RefineButton onClick={openAiRefineForSummary} />
+                  </div>
                   <TextArea
-                    rows={3}
-                    value={newProject.bullet_points.join('\n')}
-                    onChange={(e) => setNewProject({ ...newProject, bullet_points: e.target.value.split('\n') })}
-                    placeholder={'Built an end-to-end LaTeX resume tailoring engine\nReduced compilation latency by 40%'}
+                    id="profile-summary"
+                    rows={4}
+                    value={profile.summary}
+                    onChange={(e) => setProfile({ ...profile, summary: e.target.value })}
+                    placeholder="Two or three sentences on what you build, the scale you work at, and the impact you aim for."
                   />
-                </Field>
-                <Field label="Technologies — comma separated">
-                  <TextInput
-                    type="text"
-                    placeholder="TypeScript, React, Django, PostgreSQL"
-                    value={newProject.technologies.join(', ')}
-                    onChange={(e) =>
-                      setNewProject({
-                        ...newProject,
-                        technologies: e.target.value
-                          .split(',')
-                          .map((item) => item.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </Field>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setNewProjectOpen(false);
-                      setEditingProjectId(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleSaveProject} disabled={!newProject.title.trim()}>
-                    {editingProjectId ? 'Update project' : 'Save project'}
-                  </Button>
                 </div>
-              </div>
-            )}
 
-            {context.projects.length === 0 ? (
-              <EmptyState
-                title="No projects yet"
-                hint="Side projects and open-source work give tailored resumes more to draw from."
-              />
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
-                {context.projects.map((proj) => (
-                  <div key={proj.id} className="entry-card group flex flex-col">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="text-[13px] font-semibold text-slate-900">{proj.title}</h3>
-                        {proj.subtitle && <p className="mt-0.5 text-xs text-slate-600">{proj.subtitle}</p>}
-                      </div>
-                      <RowActions>
-                        <RefineButton onClick={() => openAiRefineForProject(proj)} />
-                        <button
-                          type="button"
-                          onClick={() => handleEditProject(proj)}
-                          className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                        >
-                          Edit
-                        </button>
-                        <IconButton
-                          tone="danger"
-                          onClick={() => handleDeleteProject(proj.id)}
-                          aria-label={`Delete ${proj.title}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconButton>
-                      </RowActions>
-                    </div>
+                <Button type="submit" disabled={savingProfile} className="w-full">
+                  {savingProfile ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Saving
+                    </>
+                  ) : profileSaved ? (
+                    <>
+                      <Check className="h-4 w-4" /> Saved
+                    </>
+                  ) : (
+                    'Save profile'
+                  )}
+                </Button>
+              </form>
+            </Panel>
+          </div>
 
-                    {proj.bullet_points && proj.bullet_points.length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {proj.bullet_points.filter(Boolean).map((bullet, idx) => (
-                          <li key={idx} className="flex gap-2 text-xs leading-relaxed text-slate-600">
-                            <span className="bullet-dot" />
-                            <span>{bullet}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+          <div className={showSection('skills') ? 'block' : 'hidden xl:block'}>
+            <Panel
+              title="Skills"
+              icon={Wrench}
+              count={context.skills.length}
+              actions={
+                <>
+                  <RefineButton onClick={openAiRefineForSkills} />
+                  <IconButton onClick={() => setNewSkillOpen((open) => !open)} aria-label="Add skill">
+                    <Plus className="h-4 w-4" />
+                  </IconButton>
+                </>
+              }
+            >
+              {newSkillOpen && (
+                <div className="inline-form mb-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Skill">
+                      <TextInput
+                        type="text"
+                        autoFocus
+                        placeholder="Python"
+                        value={newSkill.name}
+                        onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddSkill();
+                          }
+                        }}
+                      />
+                    </Field>
+                    <Field label="Category">
+                      <TextInput
+                        type="text"
+                        placeholder="Languages"
+                        value={newSkill.category}
+                        onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setNewSkillOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleAddSkill} disabled={!newSkill.name.trim()}>
+                      Add skill
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-                    {proj.technologies && proj.technologies.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-1">
-                        {proj.technologies.map((tech) => (
-                          <span key={tech} className="chip">
-                            {tech}
+              {context.skills.length === 0 ? (
+                <EmptyState
+                  title="No skills yet"
+                  hint="Add them one at a time, or import a resume and let the parser fill this in."
+                />
+              ) : (
+                <div className="max-h-80 space-y-3.5 overflow-y-auto pr-1">
+                  {skillGroups.map((group) => (
+                    <div key={group.category}>
+                      <p className="group-label mb-1.5">
+                        {group.category} · {group.skills.length}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.skills.map((skill) => (
+                          <span key={skill.id ?? skill.name} className="skill-chip group">
+                            {skill.name}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSkill(skill.id)}
+                              aria-label={`Remove ${skill.name}`}
+                              className="text-slate-400 transition-colors hover:text-rose-500 md:opacity-0 md:group-hover:opacity-100"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
                           </span>
                         ))}
                       </div>
-                    )}
-
-                    {(proj.repo_url || proj.live_url) && (
-                      <div className="mt-auto flex flex-wrap items-center gap-3 pt-3">
-                        {proj.repo_url && (
-                          <a href={proj.repo_url} target="_blank" rel="noreferrer" className="entry-link">
-                            <GitBranch className="h-3 w-3" /> Source
-                          </a>
-                        )}
-                        {proj.live_url && (
-                          <a href={proj.live_url} target="_blank" rel="noreferrer" className="entry-link">
-                            <ExternalLink className="h-3 w-3" /> Live
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title="Certifications"
-            icon={Award}
-            count={context.certifications.length}
-            actions={
-              <>
-                <RefineButton onClick={openAiRefineForCertifications} />
-                <IconButton onClick={() => setNewCertOpen((open) => !open)} aria-label="Add certification">
-                  <Plus className="h-4 w-4" />
-                </IconButton>
-              </>
-            }
-          >
-            {newCertOpen && (
-              <div className="inline-form mb-4 space-y-3">
-                <Field label="Certification name">
-                  <TextInput
-                    type="text"
-                    autoFocus
-                    placeholder="AWS Certified Solutions Architect"
-                    value={newCert.name}
-                    onChange={(e) => setNewCert({ ...newCert, name: e.target.value })}
-                  />
-                </Field>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Issuer">
-                    <TextInput
-                      type="text"
-                      placeholder="Amazon Web Services"
-                      value={newCert.issuer || ''}
-                      onChange={(e) => setNewCert({ ...newCert, issuer: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Issue date">
-                    <TextInput
-                      type="text"
-                      placeholder="2025"
-                      value={newCert.issue_date || ''}
-                      onChange={(e) => setNewCert({ ...newCert, issue_date: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                <Field label="Credential URL (optional)">
-                  <TextInput
-                    type="text"
-                    placeholder="https://..."
-                    value={newCert.credential_url || ''}
-                    onChange={(e) => setNewCert({ ...newCert, credential_url: e.target.value })}
-                  />
-                </Field>
-                <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => setNewCertOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={handleAddCertification} disabled={!newCert.name.trim()}>
-                    Add credential
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {context.certifications.length === 0 ? (
-              <EmptyState
-                title="No certifications yet"
-                hint="Add a credential directly or open Refine to clean up your certifications."
-              />
-            ) : (
-              <div className="space-y-2">
-                {context.certifications.map((certification) => (
-                  <div
-                    key={certification.id ?? `${certification.name}-${certification.issuer}`}
-                    className="entry-card group flex items-start justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-slate-900">{certification.name}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {[certification.issuer, certification.issue_date].filter(Boolean).join(' · ') ||
-                          'No issuer recorded'}
-                      </p>
-                      {certification.credential_url && (
-                        <a
-                          href={certification.credential_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="entry-link mt-1.5"
-                        >
-                          <ExternalLink className="h-3 w-3" /> View credential
-                        </a>
-                      )}
                     </div>
-                    {certification.id && (
-                      <IconButton
-                        tone="danger"
-                        onClick={() => handleDeleteCertification(certification.id)}
-                        aria-label={`Delete ${certification.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </IconButton>
-                    )}
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+
+          <div className={showSection('projects') ? 'block' : 'hidden xl:block'}>
+            <Panel
+              title="Projects"
+              icon={FolderGit2}
+              count={context.projects.length}
+              actions={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingProjectId(null);
+                    setNewProject(emptyProject);
+                    setNewProjectOpen((open) => !open);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              }
+            >
+              {newProjectOpen && (
+                <div className="inline-form mb-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Project title">
+                      <TextInput
+                        type="text"
+                        autoFocus
+                        placeholder="ResumeForge AI"
+                        value={newProject.title}
+                        onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Subtitle / Role">
+                      <TextInput
+                        type="text"
+                        placeholder="Creator & Lead Developer"
+                        value={newProject.subtitle || ''}
+                        onChange={(e) => setNewProject({ ...newProject, subtitle: e.target.value })}
+                      />
+                    </Field>
                   </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        {/* Right column: experience and education */}
-        <div className="space-y-5 xl:col-span-3">
-          <Panel
-            title="Work experience"
-            icon={Briefcase}
-            count={context.experiences.length}
-            actions={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditingExpId(null);
-                  setNewExp(emptyExp);
-                  setNewExpOpen((open) => !open);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
-              </Button>
-            }
-          >
-            {newExpOpen && (
-              <div className="inline-form mb-5 space-y-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Company">
-                    <TextInput
-                      type="text"
-                      autoFocus
-                      placeholder="Acme Corp"
-                      value={newExp.company}
-                      onChange={(e) => setNewExp({ ...newExp, company: e.target.value })}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Repository URL">
+                      <TextInput
+                        type="text"
+                        placeholder="https://github.com/..."
+                        value={newProject.repo_url || ''}
+                        onChange={(e) => setNewProject({ ...newProject, repo_url: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Live URL">
+                      <TextInput
+                        type="text"
+                        placeholder="https://..."
+                        value={newProject.live_url || ''}
+                        onChange={(e) => setNewProject({ ...newProject, live_url: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Highlights — one per line">
+                    <TextArea
+                      rows={3}
+                      value={newProject.bullet_points.join('\n')}
+                      onChange={(e) => setNewProject({ ...newProject, bullet_points: e.target.value.split('\n') })}
+                      placeholder={'Built an end-to-end LaTeX resume tailoring engine\nReduced compilation latency by 40%'}
                     />
                   </Field>
-                  <Field label="Role">
+                  <Field label="Technologies — comma separated">
                     <TextInput
                       type="text"
-                      placeholder="Senior Engineer"
-                      value={newExp.role}
-                      onChange={(e) => setNewExp({ ...newExp, role: e.target.value })}
+                      placeholder="TypeScript, React, Django, PostgreSQL"
+                      value={newProject.technologies.join(', ')}
+                      onChange={(e) =>
+                        setNewProject({
+                          ...newProject,
+                          technologies: e.target.value
+                            .split(',')
+                            .map((item) => item.trim())
+                            .filter(Boolean),
+                        })
+                      }
                     />
                   </Field>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setNewProjectOpen(false);
+                        setEditingProjectId(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleSaveProject} disabled={!newProject.title.trim()}>
+                      {editingProjectId ? 'Update project' : 'Save project'}
+                    </Button>
+                  </div>
                 </div>
+              )}
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field label="Location">
-                    <TextInput
-                      type="text"
-                      placeholder="Remote"
-                      value={newExp.location}
-                      onChange={(e) => setNewExp({ ...newExp, location: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Start date">
-                    <TextInput
-                      type="text"
-                      placeholder="Jan 2022"
-                      value={newExp.start_date}
-                      onChange={(e) => setNewExp({ ...newExp, start_date: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="End date">
-                    <TextInput
-                      type="text"
-                      placeholder="Present"
-                      disabled={newExp.is_current}
-                      value={newExp.is_current ? '' : newExp.end_date}
-                      onChange={(e) => setNewExp({ ...newExp, end_date: e.target.value })}
-                    />
-                  </Field>
-                </div>
-
-                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={!!newExp.is_current}
-                    onChange={(e) => setNewExp({ ...newExp, is_current: e.target.checked })}
-                    className="h-3.5 w-3.5 accent-slate-900"
-                  />
-                  I currently work here
-                </label>
-
-                <Field label="Highlights — one per line">
-                  <TextArea
-                    rows={4}
-                    value={newExp.bullet_points.join('\n')}
-                    onChange={(e) => setNewExp({ ...newExp, bullet_points: e.target.value.split('\n') })}
-                    placeholder={'Cut p95 latency 35% by rewriting the ingest pipeline\nLed a team of 4 across two quarters'}
-                  />
-                </Field>
-
-                <Field label="Technologies — comma separated">
-                  <TextInput
-                    type="text"
-                    placeholder="Python, Postgres, Kubernetes"
-                    value={newExp.technologies.join(', ')}
-                    onChange={(e) =>
-                      setNewExp({
-                        ...newExp,
-                        technologies: e.target.value
-                          .split(',')
-                          .map((item) => item.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </Field>
-
-                <div className="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setNewExpOpen(false);
-                      setEditingExpId(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSaveExperience}
-                    disabled={!newExp.company.trim() || !newExp.role.trim()}
-                  >
-                    {editingExpId ? 'Update experience' : 'Save experience'}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {context.experiences.length === 0 ? (
-              <EmptyState
-                title="No roles recorded yet"
-                hint="Import an existing resume or add your first role manually."
-                action={
-                  <Button size="sm" variant="outline" onClick={() => setNewExpOpen(true)}>
-                    <Plus className="h-3.5 w-3.5" /> Add experience
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="space-y-3">
-                {context.experiences.map((exp) => {
-                  const dateRange = [exp.start_date, exp.is_current ? 'Present' : exp.end_date]
-                    .filter(Boolean)
-                    .join(' – ');
-
-                  return (
-                    <article key={exp.id} className="entry-card group">
-                      <div className="flex items-start justify-between gap-3">
+              {context.projects.length === 0 ? (
+                <EmptyState
+                  title="No projects yet"
+                  hint="Side projects and open-source work give tailored resumes more to draw from."
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
+                  {context.projects.map((proj) => (
+                    <div key={proj.id} className="entry-card group flex flex-col">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <h3 className="text-sm font-semibold text-slate-900">{exp.role}</h3>
-                          <p className="mt-0.5 text-[13px] text-slate-600">
-                            {[exp.company, exp.location].filter(Boolean).join(' · ')}
-                          </p>
-                          {dateRange && (
-                            <p className="mt-1 text-[11px] tabular-nums text-slate-400">{dateRange}</p>
+                          <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                            {proj.title}
+                          </h3>
+                          {proj.subtitle && (
+                            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                              {proj.subtitle}
+                            </p>
                           )}
                         </div>
                         <RowActions>
-                          <RefineButton onClick={() => openAiRefineForExp(exp)} />
-                          <button
-                            type="button"
-                            onClick={() => handleEditExperience(exp)}
-                            className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          <RefineButton onClick={() => openAiRefineForProject(proj)} />
+                          <IconButton
+                            onClick={() => handleEditProject(proj)}
+                            aria-label={`Edit ${proj.title}`}
+                            title="Edit"
                           >
-                            Edit
-                          </button>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </IconButton>
                           <IconButton
                             tone="danger"
-                            onClick={() => handleDeleteExperience(exp.id)}
-                            aria-label={`Delete ${exp.role}`}
+                            onClick={() => handleDeleteProject(proj.id)}
+                            aria-label={`Delete ${proj.title}`}
+                            title="Delete"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </IconButton>
                         </RowActions>
                       </div>
 
-                      {exp.bullet_points && exp.bullet_points.length > 0 && (
-                        <ul className="mt-3 space-y-1.5">
-                          {exp.bullet_points.filter(Boolean).map((bullet, index) => (
-                            <li key={index} className="flex gap-2 text-[13px] leading-relaxed text-slate-700">
+                      {proj.bullet_points && proj.bullet_points.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {proj.bullet_points.filter(Boolean).map((bullet, idx) => (
+                            <li key={idx} className="flex gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                               <span className="bullet-dot" />
                               <span>{bullet}</span>
                             </li>
@@ -1355,634 +1103,990 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                         </ul>
                       )}
 
-                      {exp.technologies && exp.technologies.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1">
-                          {exp.technologies.map((tech) => (
+                      {proj.technologies && proj.technologies.length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap gap-1">
+                          {proj.technologies.map((tech) => (
                             <span key={tech} className="chip">
                               {tech}
                             </span>
                           ))}
                         </div>
                       )}
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </Panel>
 
-          <Panel
-            title="Education"
-            icon={GraduationCap}
-            count={context.educations.length}
-            actions={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setEditingEduId(null);
-                  setNewEdu(emptyEducation);
-                  setNewEduOpen((open) => !open);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add
-              </Button>
-            }
-          >
-            {newEduOpen && (
-              <div className="inline-form mb-4 space-y-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Institution">
+                      {(proj.repo_url || proj.live_url) && (
+                        <div className="mt-auto flex flex-wrap items-center gap-3 pt-2.5">
+                          {proj.repo_url && (
+                            <a href={proj.repo_url} target="_blank" rel="noreferrer" className="entry-link">
+                              <GitBranch className="h-3 w-3" /> Source
+                            </a>
+                          )}
+                          {proj.live_url && (
+                            <a href={proj.live_url} target="_blank" rel="noreferrer" className="entry-link">
+                              <ExternalLink className="h-3 w-3" /> Live
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+
+          <div className={showSection('certifications') ? 'block' : 'hidden xl:block'}>
+            <Panel
+              title="Certifications"
+              icon={Award}
+              count={context.certifications.length}
+              actions={
+                <>
+                  <RefineButton onClick={openAiRefineForCertifications} />
+                  <IconButton onClick={() => setNewCertOpen((open) => !open)} aria-label="Add certification">
+                    <Plus className="h-4 w-4" />
+                  </IconButton>
+                </>
+              }
+            >
+              {newCertOpen && (
+                <div className="inline-form mb-4 space-y-3">
+                  <Field label="Certification name">
                     <TextInput
                       type="text"
                       autoFocus
-                      placeholder="University of Waterloo"
-                      value={newEdu.institution}
-                      onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
+                      placeholder="AWS Certified Solutions Architect"
+                      value={newCert.name}
+                      onChange={(e) => setNewCert({ ...newCert, name: e.target.value })}
                     />
                   </Field>
-                  <Field label="Degree">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Issuer">
+                      <TextInput
+                        type="text"
+                        placeholder="Amazon Web Services"
+                        value={newCert.issuer || ''}
+                        onChange={(e) => setNewCert({ ...newCert, issuer: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Issue date">
+                      <TextInput
+                        type="text"
+                        placeholder="2025"
+                        value={newCert.issue_date || ''}
+                        onChange={(e) => setNewCert({ ...newCert, issue_date: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Credential URL (optional)">
                     <TextInput
                       type="text"
-                      placeholder="B.S. in Computer Science"
-                      value={newEdu.degree}
-                      onChange={(e) => setNewEdu({ ...newEdu, degree: e.target.value })}
+                      placeholder="https://..."
+                      value={newCert.credential_url || ''}
+                      onChange={(e) => setNewCert({ ...newCert, credential_url: e.target.value })}
                     />
                   </Field>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field label="Field of study">
-                    <TextInput
-                      type="text"
-                      placeholder="Computer Science"
-                      value={newEdu.field_of_study || ''}
-                      onChange={(e) => setNewEdu({ ...newEdu, field_of_study: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Dates">
-                    <TextInput
-                      type="text"
-                      placeholder="2018 – 2022"
-                      value={newEdu.end_date || ''}
-                      onChange={(e) => setNewEdu({ ...newEdu, end_date: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="GPA (optional)">
-                    <TextInput
-                      type="text"
-                      placeholder="3.9/4.0"
-                      value={newEdu.gpa || ''}
-                      onChange={(e) => setNewEdu({ ...newEdu, gpa: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                <Field label="Highlights / Coursework — one per line">
-                  <TextArea
-                    rows={3}
-                    value={newEdu.highlights.join('\n')}
-                    onChange={(e) => setNewEdu({ ...newEdu, highlights: e.target.value.split('\n') })}
-                    placeholder={"Dean's Honors List\nRelevant Coursework: Distributed Systems, Compilers, Operating Systems"}
-                  />
-                </Field>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setNewEduOpen(false);
-                      setEditingEduId(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSaveEducation}
-                    disabled={!newEdu.institution.trim() || !newEdu.degree.trim()}
-                  >
-                    {editingEduId ? 'Update education' : 'Save education'}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {context.educations.length === 0 ? (
-              <EmptyState
-                title="No education entries"
-                hint="Degrees, bootcamps, and coursework all belong here."
-              />
-            ) : (
-              <div className="space-y-3">
-                {context.educations.map((edu) => (
-                  <div key={edu.id} className="entry-card group">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="text-[13px] font-semibold text-slate-900">
-                          {[edu.degree, edu.field_of_study].filter(Boolean).join(', ')}
-                        </h3>
-                        <p className="mt-0.5 text-[13px] text-slate-600">{edu.institution}</p>
-                        <p className="mt-1 text-[11px] tabular-nums text-slate-400">
-                          {[
-                            [edu.start_date, edu.end_date].filter(Boolean).join(' – '),
-                            edu.gpa ? `GPA ${edu.gpa}` : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      </div>
-                      <RowActions>
-                        <RefineButton onClick={() => openAiRefineForEducation(edu)} />
-                        <button
-                          type="button"
-                          onClick={() => handleEditEducation(edu)}
-                          className="rounded px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                        >
-                          Edit
-                        </button>
-                        <IconButton
-                          tone="danger"
-                          onClick={() => handleDeleteEducation(edu.id)}
-                          aria-label={`Delete ${edu.degree}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconButton>
-                      </RowActions>
-                    </div>
-
-                    {edu.highlights && edu.highlights.length > 0 && (
-                      <ul className="mt-2.5 space-y-1.5">
-                        {edu.highlights.filter(Boolean).map((highlight, index) => (
-                          <li key={index} className="flex gap-2 text-xs leading-relaxed text-slate-600">
-                            <span className="bullet-dot" />
-                            <span>{highlight}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-      </div>
-
-      {/* AI Refine Chat Modal */}
-      {refineModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6">
-          <div className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <div className="flex items-center gap-2 font-semibold text-slate-900">
-                  <Wand2 className="h-5 w-5 text-slate-400" />
-                  <span>AI section studio</span>
-                  <span className="chip font-medium">{activeModel}</span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Editing <span className="font-semibold text-slate-700">{refineTargetLabel}</span> · you can ask AI or edit the working draft directly
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={refining}
-                  onClick={() => runRefineInstruction(quickPresetsByKind[refineTargetKind][0])}
-                >
-                  {refining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                  Quick AI Enhance
-                </Button>
-                <button
-                  onClick={() => setRefineModalOpen(false)}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                  aria-label="Close AI section chat"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-              {/* Left: editable draft + diff */}
-              <div className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-                  <div className="flex items-center gap-1 rounded-lg bg-slate-200/70 p-0.5">
-                    <button
-                      onClick={() => setRefinePanel('draft')}
-                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                        refinePanel === 'draft' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <ListChecks className="h-3.5 w-3.5" />
-                      Working draft (editable)
-                    </button>
-                    <button
-                      onClick={() => setRefinePanel('diff')}
-                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                        refinePanel === 'diff' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <GitCompare className="h-3.5 w-3.5" />
-                      Diff vs saved
-                      {refineChangeCount > 0 && (
-                        <span className="rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white dark:bg-white dark:text-slate-900">
-                          {refineChangeCount}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setRefineDraftContent(refineOriginalContent);
-                      setRefineProposedTech([...refineOriginalTech]);
-                      setRefineMessages([]);
-                      setRefineExplanation('');
-                    }}
-                    className="flex items-center gap-1 text-[11px] font-medium text-slate-500 transition-colors hover:text-slate-900"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> Reset draft
-                  </button>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-                  {refinePanel === 'draft' ? (
-                    <>
-                      {refineTargetKind === 'summary' ? (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-slate-600">
-                            Summary text (editable)
-                          </label>
-                          <textarea
-                            rows={6}
-                            value={String(refineDraftContent || '')}
-                            onChange={(e) => setRefineDraftContent(e.target.value)}
-                            className="field-textarea text-sm leading-relaxed"
-                            placeholder="Write or refine your professional summary..."
-                          />
-                        </div>
-                      ) : refineTargetKind === 'experience' ||
-                        refineTargetKind === 'project' ||
-                        refineTargetKind === 'education' ? (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-slate-600">
-                              Bullet points ({Array.isArray(refineDraftContent) ? refineDraftContent.length : 0})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setRefineDraftContent([
-                                  ...(Array.isArray(refineDraftContent) ? (refineDraftContent as string[]) : []),
-                                  '',
-                                ])
-                              }
-                              className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
-                            >
-                              <Plus className="h-3 w-3" /> Add bullet
-                            </button>
-                          </div>
-                          {(!Array.isArray(refineDraftContent) || refineDraftContent.length === 0) ? (
-                            <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
-                              No bullets yet. Click &ldquo;Quick AI Enhance&rdquo; or add a bullet manually.
-                            </p>
-                          ) : (
-                            <ul className="space-y-2">
-                              {(refineDraftContent as string[]).map((item, idx) => (
-                                <li
-                                  key={idx}
-                                  className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-2"
-                                >
-                                  <span className="mt-1.5 text-[11px] font-semibold text-slate-400 w-4 text-center">
-                                    {idx + 1}
-                                  </span>
-                                  <textarea
-                                    rows={2}
-                                    value={item}
-                                    onChange={(e) => {
-                                      const next = [...(refineDraftContent as string[])];
-                                      next[idx] = e.target.value;
-                                      setRefineDraftContent(next);
-                                    }}
-                                    className="flex-1 resize-y rounded border border-transparent px-1.5 py-1 text-xs leading-relaxed text-slate-800 focus:border-slate-300 focus:outline-none"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const next = (refineDraftContent as string[]).filter((_, i) => i !== idx);
-                                      setRefineDraftContent(next);
-                                    }}
-                                    className="mt-1 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                                    aria-label={`Remove bullet ${idx + 1}`}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          {(refineTargetKind === 'experience' || refineTargetKind === 'project') && (
-                            <div className="border-t border-slate-200 pt-3 space-y-1.5">
-                              <label className="text-xs font-medium text-slate-600">
-                                Technologies for this {refineTargetKind} (comma separated)
-                              </label>
-                              <TextInput
-                                type="text"
-                                value={refineProposedTech.join(', ')}
-                                onChange={(e) =>
-                                  setRefineProposedTech(
-                                    e.target.value
-                                      .split(',')
-                                      .map((t) => t.trim())
-                                      .filter(Boolean),
-                                  )
-                                }
-                                placeholder="Python, TypeScript, PostgreSQL, Docker..."
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <ul className="space-y-2 text-sm text-slate-700">
-                          {contentItems(refineDraftContent).length === 0 ? (
-                            <li className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
-                              No entries yet. Ask the AI to draft some.
-                            </li>
-                          ) : (
-                            contentItems(refineDraftContent).map((item, idx) => (
-                              <li
-                                key={`${item}-${idx}`}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-[11px] font-semibold text-slate-400">{idx + 1}</span>
-                                  <span className="truncate">{item}</span>
-                                </div>
-                                {Array.isArray(refineDraftContent) && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setRefineDraftContent(
-                                        (refineDraftContent as unknown[]).filter((_, i) => i !== idx),
-                                      )
-                                    }
-                                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                                    aria-label="Remove item"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      )}
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
-                        <span className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">+{refineDiff.added} added</span>
-                        <span className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">−{refineDiff.removed} removed</span>
-                        <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-700">{refineDiff.changed} reworded</span>
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">{refineDiff.unchanged} unchanged</span>
-                      </div>
-
-                      {techChanged && (
-                        <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-950">
-                          <p className="font-semibold text-indigo-800">Technologies updated:</p>
-                          <p className="mt-0.5">{refineProposedTech.join(', ') || 'None'}</p>
-                        </div>
-                      )}
-
-                      {refineChangeCount === 0 ? (
-                        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400">
-                          The draft still matches your saved content.
-                        </p>
-                      ) : (
-                        <ul className="space-y-2 text-sm leading-relaxed">
-                          {refineDiff.entries.map((entry, idx) => {
-                            if (entry.kind === 'unchanged') {
-                              return (
-                                <li
-                                  key={`unchanged-${idx}`}
-                                  className="flex gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-500"
-                                >
-                                  <span className="font-mono text-xs text-slate-300">=</span>
-                                  <span>{entry.value}</span>
-                                </li>
-                              );
-                            }
-
-                            if (entry.kind === 'added') {
-                              return (
-                                <li
-                                  key={`added-${idx}`}
-                                  className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900"
-                                >
-                                  <span className="font-mono text-xs font-bold text-emerald-600">+</span>
-                                  <span>{entry.value}</span>
-                                </li>
-                              );
-                            }
-
-                            if (entry.kind === 'removed') {
-                              return (
-                                <li
-                                  key={`removed-${idx}`}
-                                  className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900"
-                                >
-                                  <span className="font-mono text-xs font-bold text-rose-600">−</span>
-                                  <span className="line-through decoration-rose-400">{entry.value}</span>
-                                </li>
-                              );
-                            }
-
-                            return (
-                              <li
-                                key={`changed-${idx}`}
-                                className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2"
-                              >
-                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-                                  Reworded
-                                </p>
-                                <p className="text-amber-950">
-                                  {entry.words?.map((part, partIdx) => (
-                                    <span
-                                      key={`${part.kind}-${partIdx}`}
-                                      className={
-                                        part.kind === 'added'
-                                          ? 'rounded-xs bg-emerald-200/80 text-emerald-900'
-                                          : part.kind === 'removed'
-                                            ? 'rounded-xs bg-rose-200/70 text-rose-900 line-through decoration-rose-400'
-                                            : ''
-                                      }
-                                    >
-                                      {part.value}
-                                    </span>
-                                  ))}
-                                </p>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right: conversation */}
-              <div className="flex min-h-0 flex-col">
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/60 p-4">
-                  {refineMessages.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500 space-y-2">
-                      <p className="font-semibold text-slate-700">AI Context-Aware Editor</p>
-                      <p className="leading-relaxed">
-                        The AI has full context of your profile, skills, and role metadata. Click a preset below to run immediately, or type custom instructions (e.g., &ldquo;Highlight patient care outcomes and leadership&rdquo; or &ldquo;Make these bullets more concise&rdquo;).
-                      </p>
-                    </div>
-                  ) : (
-                    refineMessages.map((message, index) => (
-                      <div
-                        key={`${message.role}-${index}`}
-                        className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                          message.role === 'user'
-                            ? 'ml-auto bg-slate-900 text-white'
-                            : 'mr-auto border border-slate-200 bg-white text-slate-700'
-                        }`}
-                      >
-                        {message.content}
-                      </div>
-                    ))
-                  )}
-
-                  {refineExplanation && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                      <span className="font-semibold text-slate-800">Why: </span>
-                      {refineExplanation}
-                    </div>
-                  )}
-
-                  {refineError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
-                      {refineError}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 border-t border-slate-200 bg-white p-4">
-                  <div className="flex flex-wrap gap-1.5">
-                    {quickPresetsByKind[refineTargetKind].map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        disabled={refining}
-                        onClick={() => runRefineInstruction(chip)}
-                        className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-left text-[11px] text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50"
-                      >
-                        ✦ {chip}
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    rows={3}
-                    value={refinePrompt}
-                    onChange={(e) => setRefinePrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault();
-                        handleRunAiRefine();
-                      }
-                    }}
-                    className="field-input resize-none"
-                    placeholder="Ask AI to rewrite, condense, or add a specific achievement..."
-                  />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">Ctrl/⌘ + Enter to send</span>
-                    <Button
-                      size="sm"
-                      onClick={handleRunAiRefine}
-                      disabled={refining || !refinePrompt.trim()}
-                    >
-                      {refining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Send instruction
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setNewCertOpen(false)}>
+                      Cancel
                     </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-slate-200 bg-white px-6 py-4">
-              {refineConfirmOpen ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs text-slate-600">
-                    Replace the saved content for <strong>{refineTargetLabel}</strong> with this draft?
-                    {refineChangeCount > 0 && (
-                      <span className="ml-1 text-slate-400">
-                        ({refineDiff.added} added, {refineDiff.removed} removed, {refineDiff.changed} reworded)
-                      </span>
-                    )}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setRefineConfirmOpen(false)}>
-                      Keep editing
-                    </Button>
-                    <Button size="sm" onClick={handleApplyRefine} disabled={savingRefine}>
-                      {savingRefine && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Confirm and save
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs text-slate-500">
-                    {refineChangeCount > 0
-                      ? `${refineChangeCount} pending change${refineChangeCount === 1 ? '' : 's'} not yet saved.`
-                      : 'No pending changes.'}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => setRefineModalOpen(false)}>
-                      Discard
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setRefinePanel('diff');
-                        setRefineConfirmOpen(true);
-                      }}
-                      disabled={refineChangeCount === 0}
-                    >
-                      Review & apply
+                    <Button size="sm" onClick={handleAddCertification} disabled={!newCert.name.trim()}>
+                      Add credential
                     </Button>
                   </div>
                 </div>
               )}
+
+              {context.certifications.length === 0 ? (
+                <EmptyState
+                  title="No certifications yet"
+                  hint="Add a credential directly or open Refine to clean up your certifications."
+                />
+              ) : (
+                <div className="space-y-2">
+                  {context.certifications.map((certification) => (
+                    <div
+                      key={certification.id ?? `${certification.name}-${certification.issuer}`}
+                      className="entry-card group flex items-start justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                          {certification.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                          {[certification.issuer, certification.issue_date].filter(Boolean).join(' · ') ||
+                            'No issuer recorded'}
+                        </p>
+                        {certification.credential_url && (
+                          <a
+                            href={certification.credential_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="entry-link mt-1.5"
+                          >
+                            <ExternalLink className="h-3 w-3" /> View credential
+                          </a>
+                        )}
+                      </div>
+                      {certification.id && (
+                        <IconButton
+                          tone="danger"
+                          onClick={() => handleDeleteCertification(certification.id)}
+                          aria-label={`Delete ${certification.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconButton>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </div>
+
+        {/* Right column: experience and education */}
+        <div className="space-y-5 xl:col-span-3">
+          <div className={showSection('experience') ? 'block' : 'hidden xl:block'}>
+            <Panel
+              title="Work experience"
+              icon={Briefcase}
+              count={context.experiences.length}
+              actions={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingExpId(null);
+                    setNewExp(emptyExp);
+                    setNewExpOpen((open) => !open);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              }
+            >
+              {newExpOpen && (
+                <div className="inline-form mb-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Company">
+                      <TextInput
+                        type="text"
+                        autoFocus
+                        placeholder="Acme Corp"
+                        value={newExp.company}
+                        onChange={(e) => setNewExp({ ...newExp, company: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Role">
+                      <TextInput
+                        type="text"
+                        placeholder="Senior Engineer"
+                        value={newExp.role}
+                        onChange={(e) => setNewExp({ ...newExp, role: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Field label="Location">
+                      <TextInput
+                        type="text"
+                        placeholder="Remote"
+                        value={newExp.location}
+                        onChange={(e) => setNewExp({ ...newExp, location: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Start date">
+                      <TextInput
+                        type="text"
+                        placeholder="Jan 2022"
+                        value={newExp.start_date}
+                        onChange={(e) => setNewExp({ ...newExp, start_date: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="End date">
+                      <TextInput
+                        type="text"
+                        placeholder="Present"
+                        disabled={newExp.is_current}
+                        value={newExp.is_current ? '' : newExp.end_date}
+                        onChange={(e) => setNewExp({ ...newExp, end_date: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={!!newExp.is_current}
+                      onChange={(e) => setNewExp({ ...newExp, is_current: e.target.checked })}
+                      className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100"
+                    />
+                    I currently work here
+                  </label>
+
+                  <Field label="Highlights — one per line">
+                    <TextArea
+                      rows={4}
+                      value={newExp.bullet_points.join('\n')}
+                      onChange={(e) => setNewExp({ ...newExp, bullet_points: e.target.value.split('\n') })}
+                      placeholder={'Cut p95 latency 35% by rewriting the ingest pipeline\nLed a team of 4 across two quarters'}
+                    />
+                  </Field>
+
+                  <Field label="Technologies — comma separated">
+                    <TextInput
+                      type="text"
+                      placeholder="Python, Postgres, Kubernetes"
+                      value={newExp.technologies.join(', ')}
+                      onChange={(e) =>
+                        setNewExp({
+                          ...newExp,
+                          technologies: e.target.value
+                            .split(',')
+                            .map((item) => item.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </Field>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setNewExpOpen(false);
+                        setEditingExpId(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveExperience}
+                      disabled={!newExp.company.trim() || !newExp.role.trim()}
+                    >
+                      {editingExpId ? 'Update experience' : 'Save experience'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {context.experiences.length === 0 ? (
+                <EmptyState
+                  title="No roles recorded yet"
+                  hint="Import an existing resume or add your first role manually."
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setNewExpOpen(true)}>
+                      <Plus className="h-3.5 w-3.5" /> Add experience
+                    </Button>
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {context.experiences.map((exp) => {
+                    const dateRange = [exp.start_date, exp.is_current ? 'Present' : exp.end_date]
+                      .filter(Boolean)
+                      .join(' – ');
+
+                    return (
+                      <article key={exp.id} className="entry-card group">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {exp.role}
+                            </h3>
+                            <p className="mt-0.5 text-[13px] text-slate-600 dark:text-slate-300">
+                              {[exp.company, exp.location].filter(Boolean).join(' · ')}
+                            </p>
+                            {dateRange && (
+                              <p className="mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                                {dateRange}
+                              </p>
+                            )}
+                          </div>
+                          <RowActions>
+                            <RefineButton onClick={() => openAiRefineForExp(exp)} />
+                            <IconButton
+                              onClick={() => handleEditExperience(exp)}
+                              aria-label={`Edit ${exp.role}`}
+                              title="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </IconButton>
+                            <IconButton
+                              tone="danger"
+                              onClick={() => handleDeleteExperience(exp.id)}
+                              aria-label={`Delete ${exp.role}`}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </IconButton>
+                          </RowActions>
+                        </div>
+
+                        {exp.bullet_points && exp.bullet_points.length > 0 && (
+                          <ul className="mt-2.5 space-y-1.5">
+                            {exp.bullet_points.filter(Boolean).map((bullet, index) => (
+                              <li key={index} className="flex gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-slate-300">
+                                <span className="bullet-dot" />
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {exp.technologies && exp.technologies.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1">
+                            {exp.technologies.map((tech) => (
+                              <span key={tech} className="chip">
+                                {tech}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </Panel>
+          </div>
+
+          <div className={showSection('education') ? 'block' : 'hidden xl:block'}>
+            <Panel
+              title="Education"
+              icon={GraduationCap}
+              count={context.educations.length}
+              actions={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingEduId(null);
+                    setNewEdu(emptyEducation);
+                    setNewEduOpen((open) => !open);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              }
+            >
+              {newEduOpen && (
+                <div className="inline-form mb-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Institution">
+                      <TextInput
+                        type="text"
+                        autoFocus
+                        placeholder="University of Waterloo"
+                        value={newEdu.institution}
+                        onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Degree">
+                      <TextInput
+                        type="text"
+                        placeholder="B.S. in Computer Science"
+                        value={newEdu.degree}
+                        onChange={(e) => setNewEdu({ ...newEdu, degree: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Field label="Field of study">
+                      <TextInput
+                        type="text"
+                        placeholder="Computer Science"
+                        value={newEdu.field_of_study || ''}
+                        onChange={(e) => setNewEdu({ ...newEdu, field_of_study: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Dates">
+                      <TextInput
+                        type="text"
+                        placeholder="2018 – 2022"
+                        value={newEdu.end_date || ''}
+                        onChange={(e) => setNewEdu({ ...newEdu, end_date: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="GPA (optional)">
+                      <TextInput
+                        type="text"
+                        placeholder="3.9/4.0"
+                        value={newEdu.gpa || ''}
+                        onChange={(e) => setNewEdu({ ...newEdu, gpa: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Highlights / Coursework — one per line">
+                    <TextArea
+                      rows={3}
+                      value={newEdu.highlights.join('\n')}
+                      onChange={(e) => setNewEdu({ ...newEdu, highlights: e.target.value.split('\n') })}
+                      placeholder={"Dean's Honors List\nRelevant Coursework: Distributed Systems, Compilers, Operating Systems"}
+                    />
+                  </Field>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setNewEduOpen(false);
+                        setEditingEduId(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveEducation}
+                      disabled={!newEdu.institution.trim() || !newEdu.degree.trim()}
+                    >
+                      {editingEduId ? 'Update education' : 'Save education'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {context.educations.length === 0 ? (
+                <EmptyState
+                  title="No education entries"
+                  hint="Degrees, bootcamps, and coursework all belong here."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {context.educations.map((edu) => (
+                    <div key={edu.id} className="entry-card group">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                            {[edu.degree, edu.field_of_study].filter(Boolean).join(', ')}
+                          </h3>
+                          <p className="mt-0.5 text-[13px] text-slate-600 dark:text-slate-300">
+                            {edu.institution}
+                          </p>
+                          <p className="mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                            {[
+                              [edu.start_date, edu.end_date].filter(Boolean).join(' – '),
+                              edu.gpa ? `GPA ${edu.gpa}` : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        </div>
+                        <RowActions>
+                          <RefineButton onClick={() => openAiRefineForEducation(edu)} />
+                          <IconButton
+                            onClick={() => handleEditEducation(edu)}
+                            aria-label={`Edit ${edu.degree}`}
+                            title="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </IconButton>
+                          <IconButton
+                            tone="danger"
+                            onClick={() => handleDeleteEducation(edu.id)}
+                            aria-label={`Delete ${edu.degree}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </IconButton>
+                        </RowActions>
+                      </div>
+
+                      {edu.highlights && edu.highlights.length > 0 && (
+                        <ul className="mt-2.5 space-y-1.5">
+                          {edu.highlights.filter(Boolean).map((highlight, index) => (
+                            <li key={index} className="flex gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                              <span className="bullet-dot" />
+                              <span>{highlight}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </div>
+        </div>
+      </div>
+
+      {/* Compact, Dark-Mode-Consistent AI Refine Modal */}
+      {refineModalOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !refining && !savingRefine) {
+              setRefineModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="modal-shell max-w-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="refine-modal-title"
+          >
+            {/* Header */}
+            <div className="modal-header">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Wand2 className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                  <h3
+                    id="refine-modal-title"
+                    className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100"
+                  >
+                    Refine {refineTargetLabel}
+                  </h3>
+                  <span className="chip hidden sm:inline-flex font-mono">{activeModel}</span>
+                </div>
+              </div>
+              <IconButton
+                onClick={() => setRefineModalOpen(false)}
+                disabled={refining || savingRefine}
+                aria-label="Close AI refine dialog"
+              >
+                <X className="h-4 w-4" />
+              </IconButton>
+            </div>
+
+            {/* Sub-bar: Draft vs Diff Toggle (Top) */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/60 px-3.5 py-2 sm:px-5 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                <button
+                  type="button"
+                  onClick={() => setRefinePanel('draft')}
+                  className={`result-tab ${refinePanel === 'draft' ? 'result-tab-active' : ''}`}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span>Working draft</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefinePanel('diff')}
+                  className={`result-tab ${refinePanel === 'diff' ? 'result-tab-active' : ''}`}
+                >
+                  <GitCompare className="h-3.5 w-3.5" />
+                  <span>Diff</span>
+                  {refineChangeCount > 0 && (
+                    <span className="rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white dark:bg-slate-100 dark:text-slate-900">
+                      {refineChangeCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {refineChangeCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRefineDraftContent(refineOriginalContent);
+                    setRefineProposedTech([...refineOriginalTech]);
+                    setRefineMessages([]);
+                    setRefineExplanation('');
+                    setRefinePanel('draft');
+                  }}
+                  className="quiet-btn"
+                >
+                  <RotateCcw className="h-3 w-3" /> Reset
+                </button>
+              )}
+            </div>
+
+            {/* Scrollable Body (Center) */}
+            <div className="modal-body space-y-3">
+              {refinePanel === 'draft' ? (
+                <>
+                  {refineTargetKind === 'summary' ? (
+                    <div className="space-y-1.5">
+                      <label className="field-label">Summary text (editable)</label>
+                      <textarea
+                        rows={5}
+                        value={String(refineDraftContent || '')}
+                        onChange={(e) => setRefineDraftContent(e.target.value)}
+                        className="field-textarea text-xs sm:text-sm leading-relaxed"
+                        placeholder="Write or refine your professional summary..."
+                      />
+                    </div>
+                  ) : refineTargetKind === 'experience' ||
+                    refineTargetKind === 'project' ||
+                    refineTargetKind === 'education' ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                          Bullet points ({Array.isArray(refineDraftContent) ? refineDraftContent.length : 0})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRefineDraftContent([
+                              ...(Array.isArray(refineDraftContent) ? (refineDraftContent as string[]) : []),
+                              '',
+                            ])
+                          }
+                          className="quiet-btn border border-slate-200 dark:border-slate-700"
+                        >
+                          <Plus className="h-3 w-3" /> Add bullet
+                        </button>
+                      </div>
+
+                      {!Array.isArray(refineDraftContent) || refineDraftContent.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                          No bullets yet. Use the AI chat below or add a bullet manually.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {(refineDraftContent as string[]).map((item, idx) => (
+                            <li
+                              key={idx}
+                              className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/50 p-2 dark:border-slate-800 dark:bg-slate-900/50"
+                            >
+                              <span className="mt-1.5 w-4 text-center text-[11px] font-semibold text-slate-400">
+                                {idx + 1}
+                              </span>
+                              <textarea
+                                rows={2}
+                                value={item}
+                                onChange={(e) => {
+                                  const next = [...(refineDraftContent as string[])];
+                                  next[idx] = e.target.value;
+                                  setRefineDraftContent(next);
+                                }}
+                                className="field-textarea flex-1 resize-y py-1.5 text-xs leading-relaxed"
+                              />
+                              <IconButton
+                                tone="danger"
+                                onClick={() => {
+                                  const next = (refineDraftContent as string[]).filter((_, i) => i !== idx);
+                                  setRefineDraftContent(next);
+                                }}
+                                className="mt-0.5"
+                                aria-label={`Remove bullet ${idx + 1}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </IconButton>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {(refineTargetKind === 'experience' || refineTargetKind === 'project') && (
+                        <div className="space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
+                          <label className="field-label">
+                            Technologies for this {refineTargetKind} (comma separated)
+                          </label>
+                          <TextInput
+                            type="text"
+                            value={refineProposedTech.join(', ')}
+                            onChange={(e) =>
+                              setRefineProposedTech(
+                                e.target.value
+                                  .split(',')
+                                  .map((t) => t.trim())
+                                  .filter(Boolean),
+                              )
+                            }
+                            placeholder="Python, TypeScript, PostgreSQL, Docker..."
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <ul className="space-y-1.5 text-xs">
+                      {contentItems(refineDraftContent).length === 0 ? (
+                        <li className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                          No entries yet. Ask the AI below to draft some.
+                        </li>
+                      ) : (
+                        contentItems(refineDraftContent).map((item, idx) => (
+                          <li
+                            key={`${item}-${idx}`}
+                            className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2 text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-200"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="text-[11px] font-semibold text-slate-400">{idx + 1}</span>
+                              <span className="truncate">{item}</span>
+                            </div>
+                            {Array.isArray(refineDraftContent) && (
+                              <IconButton
+                                tone="danger"
+                                onClick={() =>
+                                  setRefineDraftContent(
+                                    (refineDraftContent as unknown[]).filter((_, i) => i !== idx),
+                                  )
+                                }
+                                aria-label="Remove item"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </IconButton>
+                            )}
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                      <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        +{refineDiff.added} added
+                      </span>
+                      <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300">
+                        −{refineDiff.removed} removed
+                      </span>
+                      <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300">
+                        {refineDiff.changed} reworded
+                      </span>
+                      <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        {refineDiff.unchanged} unchanged
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRefinePanel('draft')}
+                      className="quiet-btn border border-slate-200 dark:border-slate-700"
+                    >
+                      <Pencil className="h-3 w-3" /> Edit draft
+                    </button>
+                  </div>
+
+                  {techChanged && (
+                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-950 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-200">
+                      <p className="font-semibold">Technologies updated:</p>
+                      <p className="mt-0.5">{refineProposedTech.join(', ') || 'None'}</p>
+                    </div>
+                  )}
+
+                  {refineChangeCount === 0 ? (
+                    <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                      The draft still matches your saved content.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2 text-xs leading-relaxed">
+                      {refineDiff.entries.map((entry, idx) => {
+                        if (entry.kind === 'unchanged') {
+                          return (
+                            <li
+                              key={`unchanged-${idx}`}
+                              className="flex gap-2 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400"
+                            >
+                              <span className="font-mono text-xs text-slate-400">=</span>
+                              <span>{entry.value}</span>
+                            </li>
+                          );
+                        }
+
+                        if (entry.kind === 'added') {
+                          return (
+                            <li
+                              key={`added-${idx}`}
+                              className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+                            >
+                              <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">+</span>
+                              <span>{entry.value}</span>
+                            </li>
+                          );
+                        }
+
+                        if (entry.kind === 'removed') {
+                          return (
+                            <li
+                              key={`removed-${idx}`}
+                              className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200"
+                            >
+                              <span className="font-mono text-xs font-bold text-rose-600 dark:text-rose-400">−</span>
+                              <span className="line-through decoration-rose-400">{entry.value}</span>
+                            </li>
+                          );
+                        }
+
+                        return (
+                          <li
+                            key={`changed-${idx}`}
+                            className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 dark:border-amber-800/60 dark:bg-amber-950/30"
+                          >
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                              Reworded
+                            </p>
+                            <p className="text-slate-900 dark:text-slate-100">
+                              {entry.words?.map((part, partIdx) => (
+                                <span
+                                  key={`${part.kind}-${partIdx}`}
+                                  className={
+                                    part.kind === 'added'
+                                      ? 'rounded-xs bg-emerald-200/80 px-0.5 text-emerald-950 dark:bg-emerald-500/30 dark:text-emerald-200'
+                                      : part.kind === 'removed'
+                                        ? 'rounded-xs bg-rose-200/70 px-0.5 text-rose-950 line-through decoration-rose-400 dark:bg-rose-500/30 dark:text-rose-200'
+                                        : ''
+                                  }
+                                >
+                                  {part.value}
+                                </span>
+                              ))}
+                            </p>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom AI Chat & Prompt Dock */}
+            <div className="shrink-0 space-y-2.5 border-t border-slate-200 bg-slate-50/80 px-3.5 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-900/60">
+              {refineMessages.length > 0 && (
+                <div className="max-h-28 space-y-1.5 overflow-y-auto pr-1">
+                  {refineMessages.slice(-4).map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[88%] rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                            : 'border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {refineExplanation && refineMessages.length === 0 && (
+                <div className="flex items-start justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <span className="leading-relaxed">
+                    <strong className="font-semibold">AI:</strong> {refineExplanation}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRefineExplanation('')}
+                    className="mt-0.5 shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-100"
+                    aria-label="Dismiss AI note"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+
+              {refineError && (
+                <div
+                  className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200"
+                  role="alert"
+                >
+                  {refineError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                {quickPresetsByKind[refineTargetKind].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    disabled={refining}
+                    onClick={() => runRefineInstruction(preset.prompt)}
+                    className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    ✦ {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={refinePrompt}
+                  onChange={(e) => setRefinePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleRunAiRefine();
+                    }
+                  }}
+                  disabled={refining}
+                  className="field-input flex-1 text-xs"
+                  placeholder="Message AI to rewrite, condense, or emphasize impact…"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleRunAiRefine}
+                  disabled={refining || !refinePrompt.trim()}
+                  className="shrink-0"
+                >
+                  {refining ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  <span className="hidden sm:inline">{refining ? 'Refining…' : 'Send'}</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="modal-footer">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {refineChangeCount > 0
+                  ? `${refineChangeCount} change${refineChangeCount === 1 ? '' : 's'} ready to save`
+                  : 'No unsaved changes'}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setRefineModalOpen(false)}
+                  disabled={savingRefine}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleApplyRefine}
+                  disabled={savingRefine || refineChangeCount === 0}
+                >
+                  {savingRefine ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  Save changes
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Reset All Data Modal */}
+      {/* Compact Reset All Data Modal */}
       {resetOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+          className="modal-backdrop"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target && !resetting) setResetOpen(false);
           }}
         >
           <div
-            className="panel w-full max-w-lg overflow-hidden"
+            className="modal-shell max-w-md"
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-data-title"
           >
-            <div className="panel-head">
+            <div className="modal-header">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-rose-600" />
-                <h3 id="delete-data-title" className="text-sm font-semibold text-slate-900">
+                <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                <h3
+                  id="delete-data-title"
+                  className="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                >
                   Delete profile data
                 </h3>
               </div>
@@ -1995,27 +2099,26 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               </IconButton>
             </div>
 
-            <div className="space-y-5 p-4 sm:p-5">
-              <p className="text-[13px] leading-relaxed text-slate-600">
+            <div className="modal-body space-y-4">
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                 This permanently removes your career profile. Choose whether related application
-                and AI configuration data should be removed as well.
+                and AI configuration data should also be removed.
               </p>
 
-              <div className="rounded border border-slate-200 dark:border-slate-800">
-                <div className="border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
-                  <p className="text-xs font-medium text-slate-700">Always deleted</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                    Personal details, summary, experience, education, skills, projects, and
-                    certifications.
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800">
+                <div className="border-b border-slate-200 px-3 py-2 dark:border-slate-800">
+                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">Always deleted</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    Personal details, summary, experience, education, skills, projects, and certifications.
                   </p>
                 </div>
 
                 <label className="delete-option">
                   <span className="min-w-0">
-                    <span className="block text-xs font-medium text-slate-700">
+                    <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
                       Applications and generated documents
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                       Delete tracked roles, tailored documents, and compiled files.
                     </span>
                   </span>
@@ -2029,10 +2132,10 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
                 <label className="delete-option border-t border-slate-200 dark:border-slate-800">
                   <span className="min-w-0">
-                    <span className="block text-xs font-medium text-slate-700">
+                    <span className="block text-xs font-medium text-slate-800 dark:text-slate-200">
                       AI settings
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                       Restore the default provider, endpoint, model, and instructions.
                     </span>
                   </span>
@@ -2059,7 +2162,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
               {resetError && (
                 <div
-                  className="flex items-start gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700"
+                  className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200"
                   role="alert"
                 >
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -2068,7 +2171,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 sm:px-5 dark:border-slate-800">
+            <div className="modal-footer justify-end">
               <Button
                 size="sm"
                 variant="ghost"
@@ -2082,7 +2185,6 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                 variant="danger"
                 onClick={handleResetAllData}
                 disabled={resetting || resetConfirmText.trim().toUpperCase() !== 'DELETE'}
-                className="disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:opacity-100 dark:disabled:border-slate-700 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
               >
                 {resetting ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

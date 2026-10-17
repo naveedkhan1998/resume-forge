@@ -135,7 +135,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
     : [];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl space-y-5 px-4 sm:px-6 lg:px-8">
       <SectionHeader
         title="Import resume"
         description="Turn an existing PDF, DOCX, TXT résumé, or pasted career notes into structured profile data."
@@ -146,9 +146,9 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           title="Resume source"
           icon={FileText}
           className="lg:col-span-3"
-          bodyClassName="p-4 sm:p-5 space-y-4"
+          bodyClassName="p-3.5 sm:p-5 space-y-4"
           actions={
-            <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => {
@@ -169,21 +169,21 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                 }}
                 className={`result-tab ${inputMode === 'text' ? 'result-tab-active' : ''}`}
               >
-                Paste text / notes
+                Paste text
               </button>
             </div>
           }
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50/70 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
-            <div>
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Import mode</p>
-              <p className="text-[11px] text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-slate-800 dark:text-slate-200">Import mode</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {importMode === 'merge'
                   ? 'Safely merges new entries and bullets into your existing profile.'
                   : 'Replaces existing experience, education, skills, and project entries.'}
               </p>
             </div>
-            <div className="flex items-center gap-1 rounded border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-950">
+            <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-950">
               <button
                 type="button"
                 onClick={() => {
@@ -235,10 +235,12 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                 <span className="upload-dropzone-icon">
                   {file ? <FileText className="h-5 w-5" /> : <UploadCloud className="h-5 w-5" />}
                 </span>
-                <span className="mt-3 text-[13px] font-semibold text-slate-800">
-                  {dragActive ? 'Drop the file to select it' : 'Drop a resume here, or choose a file'}
+                <span className="mt-3 text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                  {dragActive ? 'Drop the file to select it' : 'Drop a resume here, or tap to choose a file'}
                 </span>
-                <span className="mt-1 text-xs text-slate-500">PDF, DOCX, or TXT · up to 15 MB</span>
+                <span className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  PDF, DOCX, or TXT · up to 15 MB
+                </span>
                 <input
                   id="resume-upload"
                   type="file"
@@ -253,13 +255,17 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
               </label>
 
               {file && (
-                <div className="flex items-center gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
                     <FileText className="h-4 w-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-slate-800">{file.name}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{formatFileSize(file.size)}</p>
+                    <p className="truncate text-[13px] font-medium text-slate-900 dark:text-slate-100">
+                      {file.name}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      {formatFileSize(file.size)}
+                    </p>
                   </div>
                   {!loading && (
                     <IconButton type="button" onClick={clearFile} aria-label="Remove selected file">
@@ -276,7 +282,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
               </label>
               <textarea
                 id="paste-resume-text"
-                rows={10}
+                rows={8}
                 value={pastedText}
                 onChange={(event) => {
                   setPastedText(event.target.value);
@@ -287,8 +293,8 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                 className="field-textarea font-mono text-xs leading-relaxed"
                 placeholder="Paste your full resume text, LinkedIn About + Experience sections, or raw bullet points about your roles, projects, education, and skills..."
               />
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>AI will extract contacts, experiences, projects, education, and categorized skills.</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                <span>AI extracts contacts, experiences, projects, education, and categorized skills.</span>
                 <span>{pastedText.length.toLocaleString()} chars</span>
               </div>
             </div>
@@ -296,10 +302,10 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
 
           {error && (
             <div
-              className="flex items-start gap-3 rounded border border-rose-200 bg-rose-50 p-3 text-rose-700"
+              className="flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200"
               role="alert"
             >
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <div className="min-w-0">
                 <p className="text-xs font-medium">Import could not be completed</p>
                 <p className="mt-0.5 text-xs leading-relaxed">{error}</p>
@@ -308,11 +314,13 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           )}
 
           {loading ? (
-            <div className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-900">
               <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-slate-500" />
               <div>
-                <p className="text-[13px] font-medium text-slate-800">Reading and structuring your resume</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                <p className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
+                  Reading and structuring your resume
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                   Pre-extracting contact links, parsing sections with AI, and {importMode === 'replace' ? 'updating' : 'merging'} your profile.
                 </p>
               </div>
@@ -323,6 +331,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                 type="button"
                 onClick={handleUpload}
                 disabled={(inputMode === 'file' ? !file : !pastedText.trim()) || Boolean(result)}
+                className="w-full sm:w-auto"
               >
                 {result ? (
                   <>
@@ -343,25 +352,27 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           icon={UserRound}
           className="lg:col-span-2"
         >
-          <ol className="space-y-4">
+          <ol className="space-y-3.5">
             {[
               ['Deterministic + AI contacts', 'Regex link/contact extraction combined with AI summary & headline parsing.'],
               ['Career history', 'Experience, education, projects, and certifications with preserved bullets & metrics.'],
               ['Categorized skills', 'Skills automatically organized into clean, profession-appropriate categories.'],
             ].map(([title, description], index) => (
               <li key={title} className="flex gap-3">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 text-[10px] font-semibold text-slate-500 dark:border-slate-700">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   {index + 1}
                 </span>
                 <div>
-                  <p className="text-xs font-medium text-slate-700">{title}</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{description}</p>
+                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{title}</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                    {description}
+                  </p>
                 </div>
               </li>
             ))}
           </ol>
-          <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <p className="text-[11px] leading-relaxed text-slate-500">
+          <div className="mt-4 border-t border-slate-200 pt-3.5 dark:border-slate-800">
+            <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               Review the parsed profile after import. You can edit, add, or AI-enhance every imported entry.
             </p>
           </div>
@@ -379,18 +390,20 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           }
           bodyClassName="p-0"
         >
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <div className="flex flex-col gap-3 border-b border-slate-200 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:p-4 dark:border-slate-800">
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <div>
-                <p className="text-[13px] font-medium text-slate-800">Resume imported successfully</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
+                  Resume imported successfully
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   The extracted records are now available in your career profile.
                 </p>
               </div>
             </div>
 
-            <div className="flex w-fit items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex w-fit items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => setActiveTab('overview')}
@@ -409,15 +422,17 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
           </div>
 
           {activeTab === 'overview' ? (
-            <div className="space-y-5 p-4 sm:p-5">
-              <div className="rounded border border-slate-200 p-4 dark:border-slate-800">
-                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div className="space-y-4 p-3.5 sm:p-5">
+              <div className="rounded-lg border border-slate-200 p-3.5 sm:p-4 dark:border-slate-800">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {summary?.name || profile?.full_name || 'Parsed candidate'}
                     </h3>
                     {profile?.headline && (
-                      <p className="mt-1 text-[13px] text-slate-500">{profile.headline}</p>
+                      <p className="mt-0.5 text-[13px] text-slate-500 dark:text-slate-400">
+                        {profile.headline}
+                      </p>
                     )}
                   </div>
                   {profile?.location && (
@@ -427,7 +442,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                   )}
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                   {profile?.email && (
                     <ContactItem icon={Mail} label={profile.email} />
                   )}
@@ -453,14 +468,14 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 sm:gap-3">
                 {metrics.map(({ label, value, icon: MetricIcon }) => (
                   <div key={label} className="stat-tile">
-                    <div className="flex items-center gap-1.5 text-slate-400">
-                      <MetricIcon className="h-3.5 w-3.5" />
-                      <span className="text-[11px] font-medium">{label}</span>
+                    <div className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500">
+                      <MetricIcon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate text-[11px] font-medium">{label}</span>
                     </div>
-                    <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+                    <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
                       {value}
                     </p>
                   </div>
@@ -468,11 +483,13 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
               </div>
             </div>
           ) : (
-            <div className="space-y-3 p-4 sm:p-5">
+            <div className="space-y-3 p-3.5 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs font-medium text-slate-700">Extracted Markdown</p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
+                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
+                    Extracted Markdown
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                     {result.markdown_text
                       ? `${result.markdown_text.split('\n').length} lines · ${result.markdown_text.length.toLocaleString()} characters`
                       : 'No Markdown was returned.'}
@@ -489,7 +506,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onUploadSuccess }) =
                   {copied ? 'Copied' : 'Copy Markdown'}
                 </Button>
               </div>
-              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-200">
+              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950 p-3.5 font-mono text-xs leading-relaxed text-slate-200">
                 {result.markdown_text || 'No Markdown extracted.'}
               </pre>
             </div>
@@ -504,8 +521,8 @@ const ContactItem: React.FC<{
   icon: LucideIcon;
   label: string;
 }> = ({ icon: Icon, label }) => (
-  <span className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-500">
-    <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+  <span className="inline-flex max-w-full items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+    <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
     <span className="truncate">{label}</span>
   </span>
 );

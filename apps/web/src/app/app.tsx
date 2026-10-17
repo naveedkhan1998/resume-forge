@@ -25,6 +25,7 @@ export function App() {
   const [activeModel, setActiveModel] = useState('qwen3.5:9b');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const mainRef = React.useRef<HTMLElement>(null);
 
   const loadData = async () => {
     setLoadError(null);
@@ -88,6 +89,8 @@ export function App() {
 
   useEffect(() => {
     trackPageView(location.pathname + location.search);
+    mainRef.current?.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0 });
   }, [location.pathname, location.search]);
 
   useEffect(() => {
@@ -96,7 +99,7 @@ export function App() {
     document.documentElement.dataset.theme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute(
       'content',
-      isDark ? '#090d17' : '#f7f8fc'
+      isDark ? '#0f1115' : '#f6f7f8'
     );
     localStorage.setItem('resumeforge-theme', theme);
   }, [theme]);
@@ -144,16 +147,16 @@ export function App() {
 
   if (loading) {
     return (
-      <div className="app-shell min-h-screen flex items-center justify-center">
-        <Card className="loading-card flex flex-col items-center gap-4 border border-slate-200/70 bg-white/80 p-8 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="relative flex h-14 w-14 items-center justify-center">
-            <img src="/icon.svg" alt="ResumeForge" className="h-12 w-12 rounded-xl object-contain shadow-xs" />
-            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-xs dark:bg-slate-800">
+      <div className="app-shell items-center justify-center p-4">
+        <Card className="loading-card flex flex-col items-center gap-4 p-7">
+          <div className="relative flex h-12 w-12 items-center justify-center">
+            <img src="/icon.svg" alt="ResumeForge" className="h-11 w-11 rounded-lg object-contain shadow-xs" />
+            <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white shadow-xs dark:border-slate-700 dark:bg-slate-800">
               <Loader2 className="h-3 w-3 animate-spin text-slate-600 dark:text-slate-300" />
             </div>
           </div>
           <div className="text-center">
-            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Opening your workspace</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Opening your workspace</p>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Initializing your private device session...</p>
           </div>
         </Card>
@@ -164,7 +167,7 @@ export function App() {
   const isImportRoute = location.pathname.startsWith('/import') || location.pathname.startsWith('/upload');
 
   return (
-    <div className="app-shell min-h-screen flex flex-col font-sans">
+    <div className="app-shell font-sans">
       <Navbar
         aiConnected={aiConnected}
         activeModel={activeModel}
@@ -174,15 +177,15 @@ export function App() {
         sessionStatus={sessionStatus}
       />
 
-      <main className="workspace-main flex-1 pb-20 md:pb-0">
+      <main ref={mainRef} className="workspace-main flex-1">
         {loadError && (
-          <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between gap-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+          <div className="mx-auto mt-4 max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs sm:text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
               <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0" />
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                 <span><strong>API unavailable.</strong> {loadError}</span>
               </div>
-              <Button variant="secondary" size="sm" onClick={loadData} className="shrink-0 border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-100 dark:hover:bg-slate-800">
+              <Button variant="secondary" size="sm" onClick={loadData} className="shrink-0">
                 <RefreshCw className="h-3.5 w-3.5" /> Retry
               </Button>
             </div>
@@ -190,12 +193,12 @@ export function App() {
         )}
 
         {sessionStatus && !sessionStatus.using_custom_ai && sessionStatus.llm_quota_remaining === 0 && (
-          <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded border border-rose-200 bg-rose-50/80 px-4 py-3 text-xs text-rose-900 dark:border-rose-800/60 dark:bg-rose-950/30 dark:text-rose-200">
+          <div className="mx-auto mt-4 max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border border-rose-200 bg-rose-50/80 px-3.5 py-2.5 text-xs text-rose-900 dark:border-rose-800/60 dark:bg-rose-950/30 dark:text-rose-200">
               <div className="flex items-center gap-2.5">
                 <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                 <span>
-                  <strong>This is for demo only.</strong> Please clone this repo and use it locally with your own models:{' '}
+                  <strong>Demo quota reached.</strong> Clone this repo to run locally with your own models:{' '}
                   <a
                     href="https://github.com/naveedkhan1998/resume-forge"
                     target="_blank"
@@ -211,8 +214,8 @@ export function App() {
         )}
 
         {sessionStatus && !sessionStatus.llm_unlocked && !isImportRoute && (
-          <div className="mx-auto mt-6 max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col justify-between gap-3 rounded border border-amber-200/80 bg-amber-50/70 px-4 py-3 text-xs text-amber-900 sm:flex-row sm:items-center dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="mx-auto mt-4 max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col justify-between gap-3 rounded-lg border border-amber-200/80 bg-amber-50/70 px-3.5 py-2.5 text-xs text-amber-900 sm:flex-row sm:items-center dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
               <div className="flex items-start gap-2.5">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                 <div>
@@ -220,7 +223,7 @@ export function App() {
                     Import your resume to unlock AI tailoring & refinement
                   </p>
                   <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/80">
-                    Your workspace is isolated to a private token on this device. Upload a PDF/DOCX/TXT resume or paste your career notes in the Import tab to activate AI endpoints.
+                    Upload a PDF/DOCX/TXT resume or paste your career notes in the Import tab to activate AI endpoints.
                   </p>
                 </div>
               </div>

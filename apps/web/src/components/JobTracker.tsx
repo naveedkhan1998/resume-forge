@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { JobApplication, TailoredDocument } from '../types';
+import { JobApplication } from '../types';
 import { api } from '../services/api';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -22,6 +22,8 @@ import {
   Info,
   Search,
   FileText,
+  ArrowLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { LatexDocumentPreview } from './LatexDocumentPreview';
 import { RESUMEFORGE_CLASS } from '../utils/latexClass';
@@ -37,6 +39,7 @@ interface JobTrackerProps {
 export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const [jobs, setJobs] = useState<JobApplication[]>([]);
   const [selectedJob, setSelectedJob] = useState<JobApplication | null>(null);
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [loading, setLoading] = useState(false);
   const [tailoring, setTailoring] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -60,6 +63,8 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
     raw_description: '',
     notes: '',
   });
+  const [submittingJob, setSubmittingJob] = useState(false);
+  const [createJobError, setCreateJobError] = useState<string | null>(null);
 
   // Active doc tab: 'resume' | 'cover_letter'
   const [activeDocType, setActiveDocType] = useState<'resume' | 'cover_letter'>('resume');
@@ -72,6 +77,18 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const [aiEditInstruction, setAiEditInstruction] = useState('');
   const [aiEditing, setAiEditing] = useState(false);
   const [aiEditSummary, setAiEditSummary] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!newJobOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !submittingJob) {
+        setNewJobOpen(false);
+        setCreateJobError(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [newJobOpen, submittingJob]);
 
   const loadJobs = async () => {
     setLoading(true);
@@ -100,6 +117,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   const handleSelectJob = async (job: JobApplication) => {
     setOperationError(null);
     setAiEditSummary(null);
+    setMobileView('detail');
     try {
       const detail = await api.getJobDetail(job.id);
       setSelectedJob(detail);
@@ -117,9 +135,6 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       setEditableLatex(doc ? doc.latex_source : '');
     }
   }, [activeDocType, selectedJob]);
-
-  const [submittingJob, setSubmittingJob] = useState(false);
-  const [createJobError, setCreateJobError] = useState<string | null>(null);
 
   const handleCreateJob = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -147,6 +162,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       if (res.id) {
         const detail = await api.getJobDetail(res.id);
         setSelectedJob(detail);
+        setMobileView('detail');
       }
     } catch (err: any) {
       console.error(err);
@@ -257,8 +273,10 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       const remaining = jobs.filter((job) => job.id !== selectedJob.id);
       setJobs(remaining);
       setSelectedJob(null);
+      setMobileView('list');
       if (remaining.length > 0) {
-        await handleSelectJob(remaining[0]);
+        const detail = await api.getJobDetail(remaining[0].id);
+        setSelectedJob(detail);
       }
     } catch (err) {
       setOperationError(err instanceof Error ? err.message : 'Could not delete this application.');
@@ -372,15 +390,11 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
       {/* Header */}
       <SectionHeader
         title="Job applications"
-        description={
-          <>
-            Track each opportunity from saved role to offer, with tailored documents beside the source context.
-          </>
-        }
+        description="Track each opportunity from saved role to offer, with tailored documents beside the source context."
         actions={
           <Button onClick={() => setNewJobOpen(true)}>
             <Plus className="h-4 w-4" /> Add application
@@ -389,14 +403,14 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       />
 
       {jobs.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
           {pipelineMetrics.map(({ label, value, icon: MetricIcon }) => (
             <div key={label} className="stat-tile">
-              <div className="flex items-center gap-1.5 text-slate-400">
+              <div className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500">
                 <MetricIcon className="h-3.5 w-3.5" />
                 <span className="text-[11px] font-medium">{label}</span>
               </div>
-              <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
+              <p className="mt-0.5 sm:mt-1 text-lg sm:text-xl font-semibold tabular-nums tracking-tight text-slate-950 dark:text-white">
                 {value}
               </p>
             </div>
@@ -405,19 +419,32 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
       )}
 
       {operationError && (
-        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800" role="alert">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div
+          className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200"
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
           <div className="flex-1">
             <p className="font-semibold">Action could not be completed</p>
-            <p className="mt-0.5 text-xs text-rose-700">{operationError}</p>
+            <p className="mt-0.5 text-xs text-rose-700 dark:text-rose-300">{operationError}</p>
           </div>
-          <button onClick={() => setOperationError(null)} aria-label="Dismiss error"><X className="h-4 w-4" /></button>
+          <button
+            onClick={() => setOperationError(null)}
+            aria-label="Dismiss error"
+            className="text-rose-500 hover:text-rose-800 dark:text-rose-400 dark:hover:text-rose-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Job Applications List */}
-        <div className="space-y-3 lg:col-span-4">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+        {/* Left Column: Job Applications List (hidden on mobile when viewing job detail) */}
+        <div
+          className={`space-y-3 lg:col-span-4 ${
+            mobileView === 'detail' && selectedJob ? 'hidden lg:block' : 'block'
+          }`}
+        >
           <Panel
             title="Pipeline"
             icon={Briefcase}
@@ -425,7 +452,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
             className="lg:sticky lg:top-20"
             bodyClassName="p-0 sm:p-0"
           >
-            <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
+            <div className="space-y-2.5 border-b border-slate-200 p-3 dark:border-slate-800">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
@@ -443,10 +470,10 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                     key={status}
                     type="button"
                     onClick={() => setStatusFilter(status)}
-                    className={`shrink-0 rounded px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
+                    className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors ${
                       statusFilter === status
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
+                        ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'
                     }`}
                   >
                     {status}
@@ -477,7 +504,9 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
               </div>
             ) : visibleJobs.length === 0 ? (
               <div className="px-4 py-10 text-center">
-                <p className="text-[13px] font-medium text-slate-600">No matching applications</p>
+                <p className="text-[13px] font-medium text-slate-600 dark:text-slate-300">
+                  No matching applications
+                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -490,7 +519,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 </button>
               </div>
             ) : (
-              <div className="max-h-[calc(100vh-280px)] overflow-y-auto p-2">
+              <div className="max-h-[60dvh] lg:max-h-[calc(100vh-280px)] overflow-y-auto p-2 space-y-1">
                 {visibleJobs.map((job) => {
                   const isSelected = selectedJob?.id === job.id;
                   return (
@@ -498,31 +527,36 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       key={job.id}
                       type="button"
                       onClick={() => handleSelectJob(job)}
-                      className={`group mb-1 w-full rounded p-3 text-left transition-colors last:mb-0 ${
+                      className={`group w-full rounded-md border p-3 text-left transition-colors ${
                         isSelected
-                          ? 'bg-slate-100 dark:bg-slate-800'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                          ? 'border-slate-300 bg-slate-100/90 dark:border-slate-700 dark:bg-slate-800/90'
+                          : 'border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-800 dark:hover:bg-slate-800/50'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-slate-900">
+                          <p className="truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                             {job.job_title}
                           </p>
-                          <p className="mt-0.5 truncate text-xs text-slate-500">{job.company_name}</p>
+                          <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                            {job.company_name}
+                          </p>
                         </div>
-                        {job.match_score !== null && job.match_score !== undefined && (
-                          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-500">
-                            {Math.round(job.match_score)}%
-                          </span>
-                        )}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {job.match_score !== null && job.match_score !== undefined && (
+                            <span className="text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                              {Math.round(job.match_score)}%
+                            </span>
+                          )}
+                          <ChevronRight className="h-3.5 w-3.5 text-slate-400 lg:hidden" />
+                        </div>
                       </div>
-                      <div className="mt-2.5 flex items-center justify-between gap-2">
+                      <div className="mt-2 flex items-center justify-between gap-2">
                         <span className={`application-status application-status-${job.status}`}>
                           {job.status}
                         </span>
-                        <span className="text-[11px] text-slate-400">
-                          {job.documents_count || 0} {(job.documents_count || 0) === 1 ? 'document' : 'documents'}
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                          {job.documents_count || 0} {(job.documents_count || 0) === 1 ? 'doc' : 'docs'}
                         </span>
                       </div>
                     </button>
@@ -534,14 +568,33 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
         </div>
 
         {/* Right Column: Tailoring Studio & LaTeX Editor */}
-        <div className="lg:col-span-8">
+        <div
+          className={`lg:col-span-8 ${
+            mobileView === 'list' && jobs.length > 0 ? 'hidden lg:block' : 'block'
+          }`}
+        >
           {selectedJob ? (
             <div className="panel overflow-hidden">
+              {/* Mobile Back-to-Pipeline Bar */}
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-3.5 py-2 lg:hidden dark:border-slate-800 dark:bg-slate-900/50">
+                <button
+                  type="button"
+                  onClick={() => setMobileView('list')}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span>All applications ({jobs.length})</span>
+                </button>
+                <span className={`application-status application-status-${selectedJob.status}`}>
+                  {selectedJob.status}
+                </span>
+              </div>
+
               {/* Job Header & Actions */}
-              <div className="flex flex-col gap-4 border-b border-slate-200 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5 dark:border-slate-800">
+              <div className="flex flex-col gap-3.5 border-b border-slate-200 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5 dark:border-slate-800">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                    <h2 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">
                       {selectedJob.job_title}
                     </h2>
                     {selectedJob.match_score !== null && selectedJob.match_score !== undefined && (
@@ -550,14 +603,14 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-[13px] text-slate-500">
-                    {selectedJob.company_name}
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-slate-500 dark:text-slate-400">
+                    <span>{selectedJob.company_name}</span>
                     {selectedJob.job_url && (
                       <a
                         href={selectedJob.job_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="entry-link ml-2"
+                        className="entry-link"
                       >
                         <ExternalLink className="h-3 w-3" /> View posting
                       </a>
@@ -585,13 +638,13 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   >
                     {tailoring ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Tailoring…
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Tailoring…</span>
                       </>
                     ) : (
                       <>
-                        <Wand2 className="h-4 w-4" />
-                        Tailor documents
+                        <Wand2 className="h-3.5 w-3.5" />
+                        <span>Tailor documents</span>
                       </>
                     )}
                   </Button>
@@ -605,42 +658,44 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 </div>
               </div>
 
-              <div className="space-y-5 p-4 sm:p-5">
+              <div className="space-y-4 p-3.5 sm:p-5">
                 {tailoring && (
-                  <div className="flex items-start gap-3 rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                  <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
                     <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-slate-500" />
                     <div>
-                      <p className="text-[13px] font-medium text-slate-800">Tailoring documents with {activeModel}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Extracting JD requirements, matching your profile evidence by ID, and generating ATS-clean LaTeX.
+                      <p className="text-[13px] font-medium text-slate-900 dark:text-slate-100">
+                        Tailoring documents with {activeModel}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        Extracting JD requirements, matching your profile evidence, and generating ATS-clean LaTeX.
                       </p>
                     </div>
                   </div>
                 )}
 
                 {(selectedJob.raw_description || selectedJob.notes) && (
-                  <details className="group rounded border border-slate-200 dark:border-slate-800">
-                    <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-xs font-medium text-slate-700">
+                  <details className="group rounded-lg border border-slate-200 dark:border-slate-800">
+                    <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-xs font-medium text-slate-700 dark:text-slate-300">
                       <span className="flex items-center gap-2">
                         <FileText className="h-3.5 w-3.5 text-slate-400" />
-                        Role context
+                        Role context & job description
                       </span>
                       <span className="text-[11px] text-slate-400 group-open:hidden">Show</span>
                       <span className="hidden text-[11px] text-slate-400 group-open:inline">Hide</span>
                     </summary>
-                    <div className="space-y-4 border-t border-slate-200 px-3 py-3 dark:border-slate-800">
+                    <div className="space-y-3.5 border-t border-slate-200 px-3 py-3 dark:border-slate-800">
                       {selectedJob.notes && (
                         <div>
-                          <p className="group-label mb-1.5">Notes</p>
-                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-600">
+                          <p className="group-label mb-1">Notes</p>
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                             {selectedJob.notes}
                           </p>
                         </div>
                       )}
                       {selectedJob.raw_description && (
                         <div>
-                          <p className="group-label mb-1.5">Job description</p>
-                          <p className="max-h-72 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-600">
+                          <p className="group-label mb-1">Job description</p>
+                          <p className="max-h-60 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                             {selectedJob.raw_description}
                           </p>
                         </div>
@@ -650,13 +705,13 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 )}
 
                 {selectedJob.keyword_coverage ? (
-                  <div className="rounded border border-slate-200 bg-slate-50/70 p-3.5 space-y-3 dark:border-slate-800 dark:bg-slate-900/50">
+                  <div className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                           JD Keyword Coverage
                         </span>
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300">
                           {selectedJob.keyword_coverage.coverage_pct}% in resume
                         </span>
                       </div>
@@ -671,11 +726,11 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                               'all',
                             );
                           }}
-                          className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-200 disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
                         >
                           {aiEditing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
                           Weave {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length} profile skill
-                          {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length === 1 ? '' : 's'} into resume
+                          {selectedJob.keyword_coverage.missing_in_resume_but_in_profile.length === 1 ? '' : 's'}
                         </button>
                       )}
                     </div>
@@ -684,10 +739,10 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       {selectedJob.keyword_coverage.matched_keywords.map((kw) => (
                         <span
                           key={`matched-${kw}`}
-                          className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                          className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300"
                           title="Present in tailored resume"
                         >
-                          <Check className="h-3 w-3 text-emerald-600" />
+                          <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                           {kw}
                         </span>
                       ))}
@@ -703,7 +758,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                               'all',
                             );
                           }}
-                          className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
                           title="In your master profile but missing from this resume — click to weave in"
                         >
                           + {kw} (in profile)
@@ -712,7 +767,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                       {selectedJob.keyword_coverage.missing_keywords.map((kw) => (
                         <span
                           key={`missing-${kw}`}
-                          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-400"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-500"
                           title="Not found in your master profile"
                         >
                           {kw}
@@ -724,7 +779,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   selectedJob.extracted_keywords &&
                   selectedJob.extracted_keywords.length > 0 && (
                     <div>
-                      <p className="group-label mb-2">Role keywords</p>
+                      <p className="group-label mb-1.5">Role keywords</p>
                       <div className="flex flex-wrap gap-1">
                         {selectedJob.extracted_keywords.slice(0, 14).map((keyword) => (
                           <span key={keyword} className="chip">{keyword}</span>
@@ -735,383 +790,360 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 )}
 
                 {activeDoc?.tailoring_rationale && (
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
                       <Wand2 className="h-3.5 w-3.5 text-slate-400" />
                       Tailoring rationale
                     </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
+                    <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
                       {activeDoc.tailoring_rationale}
                     </p>
                   </div>
                 )}
 
-              {/* Document Tabs & Editor */}
-              {selectedJob.documents && selectedJob.documents.length > 0 ? (
-                <div className="space-y-4">
-                  {/* Tabs: Document Type & View Mode */}
-                  <div className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center dark:border-slate-800">
-                    {/* Document Selector */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setActiveDocType('resume')}
-                        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                          activeDocType === 'resume'
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        Resume
-                      </button>
-                      <button
-                        onClick={() => setActiveDocType('cover_letter')}
-                        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                          activeDocType === 'cover_letter'
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        Cover letter
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant={aiEditOpen ? 'primary' : 'outline'}
-                        onClick={() => setAiEditOpen((open) => !open)}
-                      >
-                        <Wand2 className="h-3.5 w-3.5" />
-                        AI Edit LaTeX
-                      </Button>
-
-                      <div className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                {/* Document Tabs & Editor */}
+                {selectedJob.documents && selectedJob.documents.length > 0 ? (
+                  <div className="space-y-3.5">
+                    {/* Tabs: Document Type & View Mode */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+                      {/* Document Selector */}
+                      <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
                         <button
-                          onClick={() => setViewMode('preview')}
-                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                            viewMode === 'preview'
-                              ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
-                              : 'text-slate-500 hover:text-slate-900'
-                          }`}
+                          onClick={() => setActiveDocType('resume')}
+                          className={`result-tab ${activeDocType === 'resume' ? 'result-tab-active' : ''}`}
                         >
-                          <Eye className="h-3.5 w-3.5" /> Preview
+                          Resume
                         </button>
                         <button
-                          onClick={() => setViewMode('code')}
-                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                            viewMode === 'code'
-                              ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
-                              : 'text-slate-500 hover:text-slate-900'
-                          }`}
+                          onClick={() => setActiveDocType('cover_letter')}
+                          className={`result-tab ${activeDocType === 'cover_letter' ? 'result-tab-active' : ''}`}
                         >
-                          <FileCode className="h-3.5 w-3.5" /> Source
+                          Cover letter
                         </button>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* AI LaTeX Assistant Drawer */}
-                  {aiEditOpen && (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3.5 space-y-3 dark:border-slate-800 dark:bg-slate-900/70">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Wand2 className="h-4 w-4 text-slate-600" />
-                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                            AI LaTeX Assistant ({activeModel})
-                          </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant={aiEditOpen ? 'default' : 'outline'}
+                          onClick={() => setAiEditOpen((open) => !open)}
+                        >
+                          <Wand2 className="h-3.5 w-3.5" />
+                          <span>AI Edit LaTeX</span>
+                        </Button>
+
+                        <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                          <button
+                            onClick={() => setViewMode('preview')}
+                            className={`result-tab ${viewMode === 'preview' ? 'result-tab-active' : ''}`}
+                          >
+                            <Eye className="h-3.5 w-3.5" /> Preview
+                          </button>
+                          <button
+                            onClick={() => setViewMode('code')}
+                            className={`result-tab ${viewMode === 'code' ? 'result-tab-active' : ''}`}
+                          >
+                            <FileCode className="h-3.5 w-3.5" /> Source
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[11px] text-slate-500 mr-1">Target section:</span>
-                          {(['all', 'summary', 'experience', 'projects', 'skills'] as const).map((sec) => (
+                      </div>
+                    </div>
+
+                    {/* AI LaTeX Assistant Drawer */}
+                    {aiEditOpen && (
+                      <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-900/70">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Wand2 className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                              AI LaTeX Assistant ({activeModel})
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="mr-1 text-[11px] text-slate-500 dark:text-slate-400">Section:</span>
+                            {(['all', 'summary', 'experience', 'projects', 'skills'] as const).map((sec) => (
+                              <button
+                                key={sec}
+                                type="button"
+                                onClick={() => setAiEditTargetSection(sec)}
+                                className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
+                                  aiEditTargetSection === sec
+                                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950'
+                                    : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                                }`}
+                              >
+                                {sec}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                          {[
+                            {
+                              label: 'Tighten to fit 1 page',
+                              instruction: 'Condense verbose bullets across Experience and Projects so the entire resume fits cleanly on 1 page without losing metrics or JD keywords.',
+                              section: 'all' as const,
+                            },
+                            {
+                              label: 'Strengthen impact & metrics',
+                              instruction: 'Rewrite bullets with stronger action verbs and foreground measurable outcomes, scope, and domain impact.',
+                              section: 'experience' as const,
+                            },
+                            {
+                              label: 'Sharpen summary for JD',
+                              instruction: 'Rewrite the Professional Summary to directly align my core experience and strengths with this target role in 2-3 high-impact sentences.',
+                              section: 'summary' as const,
+                            },
+                            {
+                              label: 'Order skills by JD priority',
+                              instruction: 'Reorder and group the Skills section so the most relevant qualifications and skills for this job appear first in each category.',
+                              section: 'skills' as const,
+                            },
+                          ].map((preset) => (
                             <button
-                              key={sec}
+                              key={preset.label}
                               type="button"
-                              onClick={() => setAiEditTargetSection(sec)}
-                              className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
-                                aiEditTargetSection === sec
-                                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                                  : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300'
-                              }`}
+                              disabled={aiEditing}
+                              onClick={() => {
+                                setAiEditTargetSection(preset.section);
+                                handleRunAiEditLatex(preset.instruction, preset.section);
+                              }}
+                              className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                             >
-                              {sec}
+                              ✦ {preset.label}
                             </button>
                           ))}
                         </div>
-                      </div>
 
-                      <div className="flex flex-wrap gap-1.5">
-                        {[
-                          {
-                            label: 'Tighten to fit 1 page',
-                            instruction: 'Condense verbose bullets across Experience and Projects so the entire resume fits cleanly on 1 page without losing metrics or JD keywords.',
-                            section: 'all' as const,
-                          },
-                          {
-                            label: 'Strengthen impact & metrics',
-                            instruction: 'Rewrite bullets with stronger action verbs and foreground measurable outcomes, scope, and domain impact.',
-                            section: 'experience' as const,
-                          },
-                          {
-                            label: 'Sharpen summary for this JD',
-                            instruction: 'Rewrite the Professional Summary to directly align my core experience and strengths with this target role in 2-3 high-impact sentences.',
-                            section: 'summary' as const,
-                          },
-                          {
-                            label: 'Reorganize skills by JD priority',
-                            instruction: 'Reorder and group the Skills section so the most relevant qualifications and skills for this job appear first in each category.',
-                            section: 'skills' as const,
-                          },
-                        ].map((preset) => (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            disabled={aiEditing}
-                            onClick={() => {
-                              setAiEditTargetSection(preset.section);
-                              handleRunAiEditLatex(preset.instruction, preset.section);
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <input
+                            type="text"
+                            value={aiEditInstruction}
+                            onChange={(e) => setAiEditInstruction(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleRunAiEditLatex();
+                              }
                             }}
-                            className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          >
-                            ✦ {preset.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={aiEditInstruction}
-                          onChange={(e) => setAiEditInstruction(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleRunAiEditLatex();
-                            }
-                          }}
-                          disabled={aiEditing}
-                          placeholder={`Ask AI to edit ${aiEditTargetSection === 'all' ? 'the LaTeX document' : `the ${aiEditTargetSection} section`} (e.g., "Highlight leadership and relevant domain experience in my most recent role")...`}
-                          className="field-input flex-1 text-xs"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => handleRunAiEditLatex()}
-                          disabled={aiEditing || !aiEditInstruction.trim()}
-                        >
-                          {aiEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          {aiEditing ? 'Applying…' : 'Apply AI edit'}
-                        </Button>
-                      </div>
-
-                      {aiEditSummary && (
-                        <div className="flex items-center justify-between gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                          <span>
-                            <strong>AI updated LaTeX:</strong> {aiEditSummary}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setAiEditSummary(null)}
-                            className="text-emerald-700 hover:text-emerald-950"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Body: Preview Mode vs Code Mode */}
-                  {viewMode === 'preview' ? (
-                    <LatexDocumentPreview
-                      latexSource={editableLatex}
-                      docType={activeDocType}
-                      companyName={selectedJob.company_name}
-                      documentId={editableLatex === activeDoc?.latex_source ? activeDoc?.id : undefined}
-                      onReviewSections={handleReviewSections}
-                      reviewingSections={reviewingSections}
-                    />
-                  ) : (
-                    <div className="space-y-3">
-                      {/* Sub-toolbar: File tabs & Export actions */}
-                      <div className="flex flex-col justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 sm:flex-row sm:items-center dark:border-slate-800 dark:bg-slate-900">
-                        {/* File Switcher Tabs */}
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setCodeFileTab('tex')}
-                            className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                              codeFileTab === 'tex'
-                                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                          >
-                            <FileCode className="h-3.5 w-3.5" />
-                            <span className="max-w-48 truncate">
-                              {selectedJob.company_name ? `${selectedJob.company_name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${activeDocType}.tex` : 'main.tex'}
-                            </span>
-                          </button>
-
-                          <button
-                            onClick={() => setCodeFileTab('cls')}
-                            className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                              codeFileTab === 'cls'
-                                ? 'bg-white text-slate-900 shadow-xs dark:bg-slate-800'
-                                : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                          >
-                            <Package className="h-3.5 w-3.5" />
-                            <span>resumeforge.cls</span>
-                          </button>
-                        </div>
-
-                        {/* Export & Action Buttons */}
-                        <div className="flex flex-wrap items-center gap-1">
-                          {codeFileTab === 'tex' ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleReviewSections}
-                                disabled={reviewingSections || !editableLatex}
-                                title="Run section-by-section AI review to eliminate duplicate bullets"
-                              >
-                                {reviewingSections ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : reviewedSuccess ? (
-                                  <Check className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Wand2 className="h-3.5 w-3.5" />
-                                )}
-                                {reviewingSections ? 'Reviewing…' : reviewedSuccess ? 'Reviewed' : 'Review'}
-                              </Button>
-
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleCopyLatex}
-                                title="Copy LaTeX source"
-                              >
-                                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                {copied ? 'Copied' : 'Copy'}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleDownloadTex}
-                                title="Download .tex document"
-                              >
-                                <Download className="h-3.5 w-3.5" /> .tex
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={handleSaveLatex}
-                              >
-                                {savedDoc ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-                                {savedDoc ? 'Saved' : 'Save'}
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleCopyCls}
-                                title="Copy resumeforge.cls content"
-                              >
-                                {copiedCls ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                                {copiedCls ? 'Copied' : 'Copy .cls'}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleDownloadCls}
-                                title="Download resumeforge.cls"
-                              >
-                                <Download className="h-3.5 w-3.5" /> .cls
-                              </Button>
-                            </>
-                          )}
-
-                          {/* Overleaf Zip Bundle */}
+                            disabled={aiEditing}
+                            placeholder={`Ask AI to edit ${aiEditTargetSection === 'all' ? 'the LaTeX document' : `the ${aiEditTargetSection} section`}…`}
+                            className="field-input flex-1 text-xs"
+                          />
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={handleDownloadOverleafZip}
-                            disabled={downloadingZip}
-                            title="Download complete ZIP for Overleaf containing main.tex & resumeforge.cls"
+                            onClick={() => handleRunAiEditLatex()}
+                            disabled={aiEditing || !aiEditInstruction.trim()}
+                            className="shrink-0"
                           >
-                            {downloadingZip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderArchive className="h-3.5 w-3.5" />}
-                            Overleaf
+                            {aiEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                            <span>{aiEditing ? 'Applying…' : 'Apply AI edit'}</span>
                           </Button>
-
-                          <IconButton
-                            onClick={() => setShowOverleafGuide(!showOverleafGuide)}
-                            className={showOverleafGuide ? 'bg-slate-200 text-slate-900 dark:bg-slate-700' : ''}
-                            title="Overleaf import instructions"
-                          >
-                            <Info className="h-3.5 w-3.5" />
-                          </IconButton>
                         </div>
-                      </div>
 
-                      {/* Overleaf Quick Guide Banner */}
-                      {showOverleafGuide && (
-                        <div className="space-y-2 rounded border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900">
-                          <div className="flex items-center justify-between font-semibold text-slate-900">
-                            <span className="flex items-center gap-1.5">
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              How to open and edit this resume in Overleaf
+                        {aiEditSummary && (
+                          <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                            <span>
+                              <strong>AI updated LaTeX:</strong> {aiEditSummary}
                             </span>
-                            <IconButton onClick={() => setShowOverleafGuide(false)} aria-label="Close guide">
+                            <button
+                              type="button"
+                              onClick={() => setAiEditSummary(null)}
+                              className="text-emerald-700 hover:text-emerald-950 dark:text-emerald-300 dark:hover:text-white"
+                            >
                               <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Body: Preview Mode vs Code Mode */}
+                    {viewMode === 'preview' ? (
+                      <LatexDocumentPreview
+                        latexSource={editableLatex}
+                        docType={activeDocType}
+                        companyName={selectedJob.company_name}
+                        documentId={editableLatex === activeDoc?.latex_source ? activeDoc?.id : undefined}
+                        onReviewSections={handleReviewSections}
+                        reviewingSections={reviewingSections}
+                      />
+                    ) : (
+                      <div className="space-y-3">
+                        {/* Sub-toolbar: File tabs & Export actions */}
+                        <div className="flex flex-col justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 sm:flex-row sm:items-center dark:border-slate-800 dark:bg-slate-900/70">
+                          {/* File Switcher Tabs */}
+                          <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-900">
+                            <button
+                              onClick={() => setCodeFileTab('tex')}
+                              className={`result-tab ${codeFileTab === 'tex' ? 'result-tab-active' : ''}`}
+                            >
+                              <FileCode className="h-3.5 w-3.5" />
+                              <span className="max-w-36 sm:max-w-48 truncate">
+                                {selectedJob.company_name ? `${selectedJob.company_name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${activeDocType}.tex` : 'main.tex'}
+                              </span>
+                            </button>
+
+                            <button
+                              onClick={() => setCodeFileTab('cls')}
+                              className={`result-tab ${codeFileTab === 'cls' ? 'result-tab-active' : ''}`}
+                            >
+                              <Package className="h-3.5 w-3.5" />
+                              <span>resumeforge.cls</span>
+                            </button>
+                          </div>
+
+                          {/* Export & Action Buttons */}
+                          <div className="flex flex-wrap items-center gap-1">
+                            {codeFileTab === 'tex' ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleReviewSections}
+                                  disabled={reviewingSections || !editableLatex}
+                                  title="Run section-by-section AI review to eliminate duplicate bullets"
+                                >
+                                  {reviewingSections ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : reviewedSuccess ? (
+                                    <Check className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <Wand2 className="h-3.5 w-3.5" />
+                                  )}
+                                  {reviewingSections ? 'Reviewing…' : reviewedSuccess ? 'Reviewed' : 'Review'}
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleCopyLatex}
+                                  title="Copy LaTeX source"
+                                >
+                                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                  {copied ? 'Copied' : 'Copy'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleDownloadTex}
+                                  title="Download .tex document"
+                                >
+                                  <Download className="h-3.5 w-3.5" /> .tex
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={handleSaveLatex}
+                                >
+                                  {savedDoc ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+                                  {savedDoc ? 'Saved' : 'Save'}
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleCopyCls}
+                                  title="Copy resumeforge.cls content"
+                                >
+                                  {copiedCls ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                                  {copiedCls ? 'Copied' : 'Copy .cls'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={handleDownloadCls}
+                                  title="Download resumeforge.cls"
+                                >
+                                  <Download className="h-3.5 w-3.5" /> .cls
+                                </Button>
+                              </>
+                            )}
+
+                            {/* Overleaf Zip Bundle */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleDownloadOverleafZip}
+                              disabled={downloadingZip}
+                              title="Download complete ZIP for Overleaf containing main.tex & resumeforge.cls"
+                            >
+                              {downloadingZip ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderArchive className="h-3.5 w-3.5" />}
+                              Overleaf
+                            </Button>
+
+                            <IconButton
+                              onClick={() => setShowOverleafGuide(!showOverleafGuide)}
+                              className={showOverleafGuide ? 'bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-white' : ''}
+                              title="Overleaf import instructions"
+                            >
+                              <Info className="h-3.5 w-3.5" />
                             </IconButton>
                           </div>
-                          <p className="leading-relaxed">
-                            Because this resume uses the custom <code className="chip font-mono">\documentclass&#123;resumeforge&#125;</code> class, Overleaf needs both your <code className="chip font-mono">main.tex</code> and <code className="chip font-mono">resumeforge.cls</code>.
-                          </p>
-                          <ol className="list-inside list-decimal space-y-1 pt-1">
-                            <li>Click <strong>Overleaf (.zip)</strong> above to download the ready-to-use project archive.</li>
-                            <li>Go to <a href="https://www.overleaf.com/project" target="_blank" rel="noreferrer" className="entry-link">overleaf.com/project</a> and click <strong>New Project</strong> &rarr; <strong>Upload Project</strong>.</li>
-                            <li>Upload the downloaded <code className="chip font-mono">.zip</code> file.</li>
-                          </ol>
                         </div>
-                      )}
 
-                      {/* File Content Area */}
-                      {codeFileTab === 'tex' ? (
-                        <div className="relative">
-                          <textarea
-                            rows={24}
-                            value={editableLatex}
-                            onChange={(e) => setEditableLatex(e.target.value)}
-                            className="w-full rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-100 focus:border-slate-600 focus:outline-none"
-                            placeholder="% LaTeX source code..."
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between px-1 text-xs text-slate-500">
-                            <span>Document class file defining formatting, layout geometry, and macros.</span>
-                            <span className="font-mono text-[11px] text-slate-400">resumeforge.cls &bull; LaTeX2e</span>
+                        {/* Overleaf Quick Guide Banner */}
+                        {showOverleafGuide && (
+                          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                            <div className="flex items-center justify-between font-semibold text-slate-900 dark:text-slate-100">
+                              <span className="flex items-center gap-1.5">
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                How to open and edit this resume in Overleaf
+                              </span>
+                              <IconButton onClick={() => setShowOverleafGuide(false)} aria-label="Close guide">
+                                <X className="h-3.5 w-3.5" />
+                              </IconButton>
+                            </div>
+                            <p className="leading-relaxed">
+                              Because this resume uses the custom <code className="chip font-mono">\documentclass&#123;resumeforge&#125;</code> class, Overleaf needs both your <code className="chip font-mono">main.tex</code> and <code className="chip font-mono">resumeforge.cls</code>.
+                            </p>
+                            <ol className="list-inside list-decimal space-y-1 pt-1">
+                              <li>Click <strong>Overleaf</strong> above to download the ready-to-use project archive.</li>
+                              <li>Go to <a href="https://www.overleaf.com/project" target="_blank" rel="noreferrer" className="entry-link">overleaf.com/project</a> and click <strong>New Project</strong> &rarr; <strong>Upload Project</strong>.</li>
+                              <li>Upload the downloaded <code className="chip font-mono">.zip</code> file.</li>
+                            </ol>
                           </div>
-                          <pre className="max-h-[550px] select-text overflow-y-auto rounded border border-slate-800 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-200">
-                            {RESUMEFORGE_CLASS}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <EmptyState
-                  title="No tailored documents yet"
-                  hint="Generate a resume and cover letter from this role's description and your career profile."
-                  action={
-                    <Button size="sm" onClick={handleTailorJob} disabled={tailoring || !selectedJob.raw_description?.trim()}>
-                      <Wand2 className="h-3.5 w-3.5" /> Tailor documents
-                    </Button>
-                  }
-                />
-              )}
-            </div>
+                        )}
+
+                        {/* File Content Area */}
+                        {codeFileTab === 'tex' ? (
+                          <div className="relative">
+                            <textarea
+                              rows={20}
+                              value={editableLatex}
+                              onChange={(e) => setEditableLatex(e.target.value)}
+                              className="w-full rounded-lg border border-slate-800 bg-slate-950 p-3.5 sm:p-4 font-mono text-xs leading-relaxed text-slate-100 focus:border-slate-600 focus:outline-none"
+                              placeholder="% LaTeX source code..."
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between px-1 text-xs text-slate-500 dark:text-slate-400">
+                              <span>Document class file defining formatting, layout geometry, and macros.</span>
+                              <span className="font-mono text-[11px] text-slate-400">resumeforge.cls &bull; LaTeX2e</span>
+                            </div>
+                            <pre className="max-h-[480px] select-text overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 p-3.5 sm:p-4 font-mono text-xs leading-relaxed text-slate-200">
+                              {RESUMEFORGE_CLASS}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No tailored documents yet"
+                    hint="Generate a resume and cover letter from this role's description and your career profile."
+                    action={
+                      <Button size="sm" onClick={handleTailorJob} disabled={tailoring || !selectedJob.raw_description?.trim()}>
+                        <Wand2 className="h-3.5 w-3.5" /> Tailor documents
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
             </div>
           ) : (
             <Panel>
@@ -1129,17 +1161,35 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
         </div>
       </div>
 
-      {/* Add Job Modal */}
+      {/* Compact Add Job Modal */}
       {newJobOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4">
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !submittingJob) {
+              setNewJobOpen(false);
+              setCreateJobError(null);
+            }
+          }}
+        >
           <form
             onSubmit={handleCreateJob}
-            className="panel max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto"
+            className="modal-shell max-w-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-job-modal-title"
           >
-            <div className="panel-head">
+            <div className="modal-header">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Add application</h3>
-                <p className="mt-0.5 text-xs text-slate-500">Capture the source role before tailoring.</p>
+                <h3
+                  id="add-job-modal-title"
+                  className="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                >
+                  Add application
+                </h3>
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Capture the target role and job description for tailoring.
+                </p>
               </div>
               <IconButton
                 type="button"
@@ -1147,16 +1197,17 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   setNewJobOpen(false);
                   setCreateJobError(null);
                 }}
+                disabled={submittingJob}
                 aria-label="Close add application dialog"
               >
                 <X className="h-4 w-4" />
               </IconButton>
             </div>
 
-            <div className="space-y-4 p-4 sm:p-5">
+            <div className="modal-body space-y-3.5">
               {createJobError && (
-                <div className="flex items-center gap-2 rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                <div className="flex items-center gap-2 rounded-md border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                   <span>{createJobError}</span>
                 </div>
               )}
@@ -1183,7 +1234,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                 </Field>
               </div>
 
-              <Field label="Job posting URL">
+              <Field label="Job posting URL (optional)">
                 <TextInput
                   type="text"
                   placeholder="https://jobs.example.com/role"
@@ -1194,48 +1245,50 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
 
               <Field
                 label="Job description"
-                hint="Paste the full role description. Tailoring uses this as its source of truth."
+                hint="Paste the role description used to tailor your resume."
               >
                 <TextArea
-                  rows={8}
+                  rows={4}
+                  className="resize-y"
                   placeholder="Responsibilities, requirements, and preferred qualifications…"
                   value={newJob.raw_description}
                   onChange={(e) => setNewJob({ ...newJob, raw_description: e.target.value })}
                 />
               </Field>
 
-              <Field label="Notes" hint="Private reminders such as recruiter details, salary range, or follow-up dates.">
+              <Field label="Notes (optional)">
                 <TextArea
-                  rows={3}
-                  placeholder="Recruiter, referral, follow-up…"
+                  rows={2}
+                  placeholder="Recruiter, referral, salary range, follow-up…"
                   value={newJob.notes}
                   onChange={(e) => setNewJob({ ...newJob, notes: e.target.value })}
                 />
               </Field>
+            </div>
 
-              <div className="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setNewJobOpen(false);
-                    setCreateJobError(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={submittingJob}>
-                  {submittingJob ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Creating…
-                    </>
-                  ) : (
-                    'Create application'
-                  )}
-                </Button>
-              </div>
+            <div className="modal-footer justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setNewJobOpen(false);
+                  setCreateJobError(null);
+                }}
+                disabled={submittingJob}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={submittingJob}>
+                {submittingJob ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  'Create application'
+                )}
+              </Button>
             </div>
           </form>
         </div>
