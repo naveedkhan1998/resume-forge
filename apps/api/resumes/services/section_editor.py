@@ -75,7 +75,7 @@ class SectionEditor:
         if section_type == "skills":
             for item in proposed_content:
                 if isinstance(item, dict) and not item.get("name") and isinstance(item.get("skills") or item.get("items"), list):
-                    cat = str(item.get("category") or "Technical Skills").strip()
+                    cat = str(item.get("category") or "Core Skills").strip()
                     prof = str(item.get("proficiency") or "").strip()
                     for sub in (item.get("skills") or item.get("items") or []):
                         if isinstance(sub, str) and sub.strip():

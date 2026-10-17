@@ -630,13 +630,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
     experience: [
       { label: 'Strengthen action verbs', prompt: 'Strengthen action verbs, highlight scope & expertise, and keep every metric intact' },
       { label: 'Tighten for 1-page', prompt: 'Make bullets tighter (1-2 lines each) for a 1-page resume' },
-      { label: 'Extract tech tags', prompt: 'Extract any tools, methods, or technologies mentioned in bullets into the tags list' },
+      { label: 'Extract skill & tool tags', prompt: 'Extract any tools, methods, or technologies mentioned in bullets into the tags list' },
       { label: 'Order by impact', prompt: 'Reorder bullets by strongest impact and outcomes first' },
     ],
     project: [
       { label: 'Highlight outcomes', prompt: 'Highlight key contributions, methods or tools used, and concrete outcomes' },
       { label: 'Condense to 2-3 bullets', prompt: 'Condense into 2-3 high-impact bullets suitable for a 1-page resume' },
-      { label: 'Extract tech tags', prompt: 'Extract all tools, media, or technologies used into the project tags list' },
+      { label: 'Extract skill & tool tags', prompt: 'Extract all tools, media, or technologies used into the project tags list' },
     ],
     education: [
       { label: 'Tighten highlights', prompt: 'Tighten academic coursework, clinical rotations, honors, and awards into concise bullets' },
@@ -770,7 +770,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       type="text"
                       value={profile.headline}
                       onChange={(e) => setProfile({ ...profile, headline: e.target.value })}
-                      placeholder="Senior Full-Stack Engineer"
+                      placeholder="e.g., Clinical Nurse Specialist, Financial Analyst, Software Engineer"
                     />
                   </Field>
                 </div>
@@ -799,7 +799,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     type="text"
                     value={profile.location}
                     onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                    placeholder="San Francisco, CA"
+                    placeholder="Austin, TX"
                   />
                 </Field>
 
@@ -814,7 +814,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                         placeholder="linkedin.com/in/username"
                       />
                     </Field>
-                    <Field label="GitHub">
+                    <Field label="GitHub (optional)">
                       <TextInput
                         type="text"
                         value={profile.github_url}
@@ -822,12 +822,12 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                         placeholder="github.com/username"
                       />
                     </Field>
-                    <Field label="Website">
+                    <Field label="Website / Portfolio">
                       <TextInput
                         type="text"
                         value={profile.website_url || ''}
                         onChange={(e) => setProfile({ ...profile, website_url: e.target.value })}
-                        placeholder="janedoe.dev"
+                        placeholder="janedoe.com"
                       />
                     </Field>
                   </div>
@@ -845,7 +845,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     rows={4}
                     value={profile.summary}
                     onChange={(e) => setProfile({ ...profile, summary: e.target.value })}
-                    placeholder="Two or three sentences on what you build, the scale you work at, and the impact you aim for."
+                    placeholder="Two or three sentences on your core expertise, scope of work, and measurable impact."
                   />
                 </div>
 
@@ -887,7 +887,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       <TextInput
                         type="text"
                         autoFocus
-                        placeholder="Python"
+                        placeholder="e.g., Patient Triage, Financial Modeling, Python"
                         value={newSkill.name}
                         onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
                         onKeyDown={(e) => {
@@ -901,7 +901,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Category">
                       <TextInput
                         type="text"
-                        placeholder="Languages"
+                        placeholder="e.g., Clinical Care, Core Competencies, Languages"
                         value={newSkill.category}
                         onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
                       />
@@ -978,7 +978,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       <TextInput
                         type="text"
                         autoFocus
-                        placeholder="ResumeForge AI"
+                        placeholder="e.g., ICU Mobility Protocol, Brand Campaign"
                         value={newProject.title}
                         onChange={(e) => setNewProject({ ...newProject, title: e.target.value })}
                       />
@@ -986,22 +986,22 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Subtitle / Role">
                       <TextInput
                         type="text"
-                        placeholder="Creator & Lead Developer"
+                        placeholder="e.g., Lead Investigator, Project Lead"
                         value={newProject.subtitle || ''}
                         onChange={(e) => setNewProject({ ...newProject, subtitle: e.target.value })}
                       />
                     </Field>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Repository URL">
+                    <Field label="Source / Reference URL">
                       <TextInput
                         type="text"
-                        placeholder="https://github.com/..."
+                        placeholder="https://..."
                         value={newProject.repo_url || ''}
                         onChange={(e) => setNewProject({ ...newProject, repo_url: e.target.value })}
                       />
                     </Field>
-                    <Field label="Live URL">
+                    <Field label="Live / Portfolio URL">
                       <TextInput
                         type="text"
                         placeholder="https://..."
@@ -1015,13 +1015,13 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       rows={3}
                       value={newProject.bullet_points.join('\n')}
                       onChange={(e) => setNewProject({ ...newProject, bullet_points: e.target.value.split('\n') })}
-                      placeholder={'Built an end-to-end LaTeX resume tailoring engine\nReduced compilation latency by 40%'}
+                      placeholder={'Designed and launched a cross-departmental workflow initiative\nImproved process efficiency by 40%'}
                     />
                   </Field>
-                  <Field label="Technologies — comma separated">
+                  <Field label="Skills, tools & methods — comma separated">
                     <TextInput
                       type="text"
-                      placeholder="TypeScript, React, Django, PostgreSQL"
+                      placeholder="e.g., Quality Improvement, Financial Modeling, Figma, React"
                       value={newProject.technologies.join(', ')}
                       onChange={(e) =>
                         setNewProject({
@@ -1055,7 +1055,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               {context.projects.length === 0 ? (
                 <EmptyState
                   title="No projects yet"
-                  hint="Side projects and open-source work give tailored resumes more to draw from."
+                  hint="Key initiatives, research, exhibitions, case studies, or technical projects give tailored resumes more to draw from."
                 />
               ) : (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1">
@@ -1136,7 +1136,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
           <div className={showSection('certifications') ? 'block' : 'hidden xl:block'}>
             <Panel
-              title="Certifications"
+              title="Certifications & Licenses"
               icon={Award}
               count={context.certifications.length}
               actions={
@@ -1150,11 +1150,11 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
             >
               {newCertOpen && (
                 <div className="inline-form mb-4 space-y-3">
-                  <Field label="Certification name">
+                  <Field label="Certification or license name">
                     <TextInput
                       type="text"
                       autoFocus
-                      placeholder="AWS Certified Solutions Architect"
+                      placeholder="e.g., Registered Nurse (RN), CPA, PMP, AWS Solutions Architect"
                       value={newCert.name}
                       onChange={(e) => setNewCert({ ...newCert, name: e.target.value })}
                     />
@@ -1163,7 +1163,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Issuer">
                       <TextInput
                         type="text"
-                        placeholder="Amazon Web Services"
+                        placeholder="e.g., State Board, CFA Institute, PMI"
                         value={newCert.issuer || ''}
                         onChange={(e) => setNewCert({ ...newCert, issuer: e.target.value })}
                       />
@@ -1268,11 +1268,11 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               {newExpOpen && (
                 <div className="inline-form mb-4 space-y-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <Field label="Company">
+                    <Field label="Company / Organization">
                       <TextInput
                         type="text"
                         autoFocus
-                        placeholder="Acme Corp"
+                        placeholder="e.g., St. David's Medical Center, Deloitte, Acme Corp"
                         value={newExp.company}
                         onChange={(e) => setNewExp({ ...newExp, company: e.target.value })}
                       />
@@ -1280,7 +1280,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Role">
                       <TextInput
                         type="text"
-                        placeholder="Senior Engineer"
+                        placeholder="e.g., Senior ICU Nurse, FP&A Manager, Senior Engineer"
                         value={newExp.role}
                         onChange={(e) => setNewExp({ ...newExp, role: e.target.value })}
                       />
@@ -1291,7 +1291,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Location">
                       <TextInput
                         type="text"
-                        placeholder="Remote"
+                        placeholder="Austin, TX or Remote"
                         value={newExp.location}
                         onChange={(e) => setNewExp({ ...newExp, location: e.target.value })}
                       />
@@ -1330,14 +1330,14 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       rows={4}
                       value={newExp.bullet_points.join('\n')}
                       onChange={(e) => setNewExp({ ...newExp, bullet_points: e.target.value.split('\n') })}
-                      placeholder={'Cut p95 latency 35% by rewriting the ingest pipeline\nLed a team of 4 across two quarters'}
+                      placeholder={'Improved key outcomes by 25% through cross-functional process redesign\nMentored 8 team members across two departments'}
                     />
                   </Field>
 
-                  <Field label="Technologies — comma separated">
+                  <Field label="Skills, tools & methods — comma separated">
                     <TextInput
                       type="text"
-                      placeholder="Python, Postgres, Kubernetes"
+                      placeholder="e.g., Epic EHR, GAAP, Curriculum Design, Python"
                       value={newExp.technologies.join(', ')}
                       onChange={(e) =>
                         setNewExp({
@@ -1480,7 +1480,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       <TextInput
                         type="text"
                         autoFocus
-                        placeholder="University of Waterloo"
+                        placeholder="e.g., University of Texas at Austin"
                         value={newEdu.institution}
                         onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
                       />
@@ -1488,7 +1488,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Degree">
                       <TextInput
                         type="text"
-                        placeholder="B.S. in Computer Science"
+                        placeholder="e.g., B.S. in Nursing, M.B.A., B.S. in Computer Science"
                         value={newEdu.degree}
                         onChange={(e) => setNewEdu({ ...newEdu, degree: e.target.value })}
                       />
@@ -1498,7 +1498,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                     <Field label="Field of study">
                       <TextInput
                         type="text"
-                        placeholder="Computer Science"
+                        placeholder="e.g., Nursing, Finance, Computer Science"
                         value={newEdu.field_of_study || ''}
                         onChange={(e) => setNewEdu({ ...newEdu, field_of_study: e.target.value })}
                       />
@@ -1525,7 +1525,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       rows={3}
                       value={newEdu.highlights.join('\n')}
                       onChange={(e) => setNewEdu({ ...newEdu, highlights: e.target.value.split('\n') })}
-                      placeholder={"Dean's Honors List\nRelevant Coursework: Distributed Systems, Compilers, Operating Systems"}
+                      placeholder={"Dean's Honors List\nRelevant Coursework, Clinical Rotations, or Thesis"}
                     />
                   </Field>
                   <div className="flex justify-end gap-2">
@@ -1553,7 +1553,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
               {context.educations.length === 0 ? (
                 <EmptyState
                   title="No education entries"
-                  hint="Degrees, bootcamps, and coursework all belong here."
+                  hint="Degrees, clinical training, fellowships, and coursework all belong here."
                 />
               ) : (
                 <div className="space-y-3">
@@ -1777,7 +1777,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                       {(refineTargetKind === 'experience' || refineTargetKind === 'project') && (
                         <div className="space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
                           <label className="field-label">
-                            Technologies for this {refineTargetKind} (comma separated)
+                            Skills, tools & methods for this {refineTargetKind} (comma separated)
                           </label>
                           <TextInput
                             type="text"
@@ -1790,7 +1790,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
                                   .filter(Boolean),
                               )
                             }
-                            placeholder="Python, TypeScript, PostgreSQL, Docker..."
+                            placeholder="e.g., Epic EHR, Financial Modeling, Figma, Python..."
                           />
                         </div>
                       )}
@@ -1858,7 +1858,7 @@ export const MasterProfile: React.FC<MasterProfileProps> = ({
 
                   {techChanged && (
                     <div className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-950 dark:border-indigo-800/60 dark:bg-indigo-950/40 dark:text-indigo-200">
-                      <p className="font-semibold">Technologies updated:</p>
+                      <p className="font-semibold">Skills & tools updated:</p>
                       <p className="mt-0.5">{refineProposedTech.join(', ') || 'None'}</p>
                     </div>
                   )}

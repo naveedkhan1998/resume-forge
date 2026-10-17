@@ -2178,3 +2178,148 @@ class DeviceSessionAndLLMGatingTests(TestCase):
         self.assertEqual(dummy_ctx["profile"]["full_name"], "Jane Dummy")
 
 
+class MultiProfessionRegressionTests(TestCase):
+    def test_comma_separated_skills_over_100_chars_do_not_truncate_last_skill(self):
+        parsed = ResumeParser.normalize_parsed_data(
+            {
+                "profile": {"full_name": "Marcus Vance, CSCP, PMP"},
+                "skills": [
+                    {
+                        "category": "Operations & Logistics",
+                        "name": "Container Shipping, Intermodal Freight, 3PL Management, Customs Compliance, Demand Planning, S&OP, Cold Chain Logistics",
+                    },
+                    {
+                        "category": "Systems & Analytics",
+                        "name": "Advanced Excel (VBA, PivotTables), SAP S/4HANA, Oracle NetSuite, Hyperion Essbase, Bloomberg Terminal, Capital IQ, Power BI",
+                    },
+                ],
+            }
+        )
+        skill_names = [s["name"] for s in parsed["skills"]]
+        self.assertIn("Cold Chain Logistics", skill_names)
+        self.assertIn("Power BI", skill_names)
+        self.assertIn("Advanced Excel (VBA, PivotTables)", skill_names)
+        self.assertNotIn("C", skill_names)
+        self.assertNotIn("P", skill_names)
+
+    def test_spoken_and_signed_languages_preserve_languages_category(self):
+        from resumes.services.latex_templates import consolidate_skills_to_latex
+
+        skills = [
+            {"category": "Languages", "name": "English (Native)"},
+            {"category": "Languages", "name": "Spanish (Fluent)"},
+            {"category": "Languages", "name": "ASL (Fluent)"},
+            {"category": "Languages", "name": "Hebrew (Conversational)"},
+            {"category": "Languages", "name": "Mandarin (Business Proficient)"},
+        ]
+        latex = consolidate_skills_to_latex(skills)
+        self.assertIn(r"\textbf{Languages}{:", latex)
+        self.assertNotIn("Programming Languages", latex)
+        self.assertIn("Spanish (Fluent)", latex)
+        self.assertIn("ASL (Fluent)", latex)
+        self.assertIn("Hebrew (Conversational)", latex)
+
+    def test_non_software_skills_do_not_get_hijacked_into_dev_categories(self):
+        from resumes.services.latex_templates import classify_skill_item
+
+        self.assertEqual(
+            classify_skill_item("Clinical Care", "Lymph Node Dissection Recovery"),
+            "Clinical Care",
+        )
+        self.assertEqual(
+            classify_skill_item("Clinical Systems", "Philips IntelliVue"),
+            "Clinical Systems",
+        )
+        self.assertEqual(
+            classify_skill_item("Audit & Compliance", "Internal Controls & Testing"),
+            "Audit & Compliance",
+        )
+        self.assertEqual(
+            classify_skill_item("Operations & Logistics", "Container Shipping"),
+            "Operations & Logistics",
+        )
+        self.assertEqual(
+            classify_skill_item("Assessment & Tools", "Library Management"),
+            "Assessment & Tools",
+        )
+
+    def test_personal_names_with_al_are_not_corrupted_to_ai(self):
+        text = (
+            "Co-authored rapid-response clinical pathway with Dr. Al-Mansoor and Al Green, "
+            "while scaling Al-ready infrastructure and GenAl workflows."
+        )
+        cleaned = normalize_unicode_and_latex_text(text)
+        self.assertIn("Dr. Al-Mansoor", cleaned)
+        self.assertIn("Al Green", cleaned)
+        self.assertIn("AI-ready", cleaned)
+        self.assertIn("GenAI", cleaned)
+
+    def test_duration_normalization_preserves_age_and_project_durations(self):
+        doc = (
+            r"\section{Summary}" + "\n"
+            r"Dedicated Special Education Teacher with 3+ years of experience." + "\n"
+            r"\section{Experience}" + "\n"
+            r"\resumeItem{Designed inclusive IEP frameworks for 5 years old and 5-year-old learners.}" + "\n"
+            r"\resumeItem{Negotiated 3-year carrier contracts and improved 1 year retention rate.}"
+        )
+        normalized = normalize_unicode_and_latex_text(doc, expected_years=7)
+        self.assertIn("7+ years of experience", normalized)
+        self.assertIn("5 years old", normalized)
+        self.assertIn("5-year-old", normalized)
+        self.assertIn("3-year carrier contracts", normalized)
+        self.assertIn("1 year retention rate", normalized)
+
+    def test_keyword_coverage_matches_latex_escaped_ampersand_keywords(self):
+        latex_doc = r"Directed FP\&A, M\&A due diligence, P\&L management, and S\&OP demand planning."
+        resume_data = {
+            "profile": {"summary": "FP&A and M&A leader"},
+            "experiences": [],
+            "projects": [],
+            "skills": [],
+            "educations": [],
+            "certifications": [],
+        }
+        cov = TailorService.analyze_keyword_coverage(
+            ["FP&A", "M&A", "P&L Management", "S&OP"],
+            latex_doc,
+            resume_data,
+        )
+        self.assertEqual(cov["coverage_pct"], 100)
+        self.assertEqual(len(cov["matched_keywords"]), 4)
+
+    def test_markdown_converter_recognizes_diverse_profession_headers_and_credentials_in_name(self):
+        raw_text = (
+            "# MARIA ELENA SANTOS, BSN, RN, CCRN\n"
+            "Boston, MA | maria.santos@clinicalmail.org\n\n"
+            "CLINICAL EXPERIENCE\n"
+            "Massachusetts General Hospital | Charge Nurse | Boston, MA | 2021 - Present\n\n"
+            "LICENSES & CERTIFICATIONS\n"
+            "Registered Nurse (RN) | Massachusetts Board of Registration in Nursing\n\n"
+            "CORE COMPETENCIES & SKILLS\n"
+            "Clinical Care: Hemodynamic Monitoring, Mechanical Ventilation\n"
+        )
+        converter = DocumentMarkdownConverter()
+        md = converter.text_to_markdown(raw_text)
+        self.assertIn("## Clinical Experience", md)
+        self.assertIn("## Licenses & Certifications", md)
+        self.assertIn("## Core Competencies & Skills", md)
+
+        contacts = ResumeParser.extract_contact_and_links(md)
+        self.assertEqual(contacts["full_name"], "MARIA ELENA SANTOS, BSN, RN, CCRN")
+
+    def test_match_project_and_experience_normalizes_ampersand_and_string_ids(self):
+        master_proj = {
+            "id": 7,
+            "title": "Sensory-Friendly Classroom Library & Literacy Lab",
+        }
+        cand_proj = {
+            "id": "7",
+            "title": "Sensory-Friendly Classroom Library and Literacy Lab",
+            "bullet_points": ["Curated 1,200+ decodable texts."],
+        }
+        matched = TailorService._match_project(master_proj, [cand_proj])
+        self.assertIs(matched, cand_proj)
+
+
+
+

@@ -15,7 +15,7 @@ from ..models import (
     UserAISettings,
 )
 from .ollama_service import OllamaService
-from .latex_templates import LatexGenerator, normalize_unicode_and_latex_text
+from .latex_templates import LatexGenerator, escape_latex, normalize_unicode_and_latex_text
 from .experience_calculator import (
     calculate_experience_metrics,
     calculate_experience_metrics_from_latex,
@@ -237,25 +237,34 @@ class TailorService:
                 if re.search(rf"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])", text, flags=re.IGNORECASE):
                     _add_term(term)
 
-        # 2. Cross-industry professional, clinical, creative, business, and technical terms
+        # 2. Cross-industry professional, clinical, creative, business, legal, trades, and technical terms
         cross_domain_patterns = [
             # Healthcare & Clinical
             "Patient Care", "Triage", "EHR", "EMR", "Epic", "Cerner", "HIPAA", "BLS", "ACLS", "PALS",
+            "CCRN", "RN", "BSN", "NP", "APRN", "CRRT", "ECMO", "Hemodynamic Monitoring", "Mechanical Ventilation",
             "ICU", "Emergency Medicine", "Clinical Research", "Phlebotomy", "Telemetry", "Care Planning",
-            "Medication Administration", "Infection Control", "Case Management", "Rehabilitation",
+            "Medication Administration", "Infection Control", "Case Management", "Rehabilitation", "Joint Commission",
             # Arts, Design & Media
             "Figma", "Adobe Creative Suite", "Photoshop", "Illustrator", "InDesign", "Oil Painting",
             "Acrylic", "Watercolor", "Mixed Media", "Curatorial", "Art Direction", "Typography",
-            "Exhibition Design", "Storyboarding", "CAD", "AutoCAD", "SolidWorks", "Blender",
-            # Business, Finance & Operations
+            "Exhibition Design", "Storyboarding", "CAD", "AutoCAD", "SolidWorks", "Blender", "Printmaking",
+            # Business, Finance, Accounting & Operations
             "Project Management", "Stakeholder Management", "Financial Modeling", "Forecasting",
-            "GAAP", "CPA", "PMP", "Agile", "Scrum", "Lean", "Six Sigma", "Supply Chain", "Salesforce",
-            "SAP", "Excel", "Tableau", "Power BI", "Risk Management", "Compliance",
-            # Education & Research
-            "Curriculum Development", "Instructional Design", "Special Education", "IEP", "Classroom Management",
-            "Grant Writing", "Peer Review", "SPSS", "MATLAB",
+            "FP&A", "M&A", "P&L", "DCF", "LBO", "GAAP", "US GAAP", "IFRS", "SOX 404", "SEC Reporting",
+            "CPA", "CFA", "PMP", "CSCP", "Agile", "Scrum", "Lean", "Six Sigma", "Lean Six Sigma",
+            "DMAIC", "Kaizen", "5S", "Supply Chain", "S&OP", "3PL", "Container Shipping", "Intermodal",
+            "OSHA", "WMS", "TMS", "ERP", "Salesforce", "SAP", "Anaplan", "NetSuite", "Bloomberg Terminal",
+            "Excel", "Tableau", "Power BI", "Risk Management", "Compliance",
+            # Education, Social Work & Research
+            "Curriculum Development", "Instructional Design", "Special Education", "IEP", "504 Plans",
+            "UDL", "Orton-Gillingham", "PBIS", "FBA", "Differentiated Instruction", "Classroom Management",
+            "Literacy", "ASL", "Grant Writing", "Peer Review", "SPSS", "MATLAB",
+            # Legal, Marketing, HR & Hospitality
+            "Due Diligence", "Contract Negotiation", "Regulatory Compliance", "Litigation",
+            "SEO", "SEM", "CRM", "HubSpot", "Google Analytics", "Brand Strategy", "Copywriting",
+            "Workday", "Talent Acquisition", "Employee Relations", "HACCP", "ServSafe",
             # Engineering & Software
-            "Python", "Go", "TypeScript", "JavaScript", "Rust", "C\\+\\+", "Java", "SQL",
+            "Python", "Go", "TypeScript", "JavaScript", "Rust", "C\\+\\+", "C#", "Java", "SQL",
             "Django", "FastAPI", "Flask", "React", "Next\\.js", "Node\\.js", "GraphQL", "REST",
             "PostgreSQL", "MySQL", "Redis", "MongoDB", "Docker", "Kubernetes", "Terraform", "AWS",
             "GCP", "Azure", "CI/CD", "Linux", "Prometheus", "Grafana", "Microservices",
@@ -292,7 +301,47 @@ class TailorService:
             }
 
         latex_lower = (latex_source or "").lower()
+        # Unescape common LaTeX sequences so keywords like FP&A, M&A, P&L, S&OP, C#, R&D match seamlessly
+        latex_unescaped_lower = (
+            latex_lower.replace(r"\&", "&")
+            .replace(r"\%", "%")
+            .replace(r"\#", "#")
+            .replace(r"\_", "_")
+            .replace(r"\$", "$")
+        )
         profile_blob = json.dumps(master_data or {}, ensure_ascii=False).lower() if master_data else ""
+
+        acronym_synonyms: Dict[str, List[str]] = {
+            "asl": ["american sign language"],
+            "american sign language": ["asl"],
+            "ehr": ["electronic health record", "electronic medical record"],
+            "emr": ["electronic medical record", "electronic health record"],
+            "iep": ["individualized education program"],
+            "pbis": ["positive behavioral interventions"],
+            "fba": ["functional behavior assessment"],
+            "udl": ["universal design for learning"],
+            "bls": ["basic life support"],
+            "acls": ["advanced cardiovascular life support"],
+            "cpr": ["cardiopulmonary resuscitation"],
+            "dcf": ["discounted cash flow"],
+            "lbo": ["leveraged buyout"],
+        }
+
+        def _matches_blob(kw_low: str, blob_raw: str, blob_unescaped: str) -> bool:
+            if kw_low in blob_raw or kw_low in blob_unescaped:
+                return True
+            kw_escaped = escape_latex(kw_low).lower()
+            if kw_escaped and kw_escaped in blob_raw:
+                return True
+            for syn in acronym_synonyms.get(kw_low, []):
+                if syn in blob_unescaped:
+                    return True
+            # Handle common gerund/plural inflection e.g. "financial modeling" <-> "financial models" / "financial model"
+            if kw_low.endswith("ing") and len(kw_low) > 6:
+                stem = kw_low[:-3].rstrip()
+                if stem and (stem in blob_unescaped or f"{stem}s" in blob_unescaped):
+                    return True
+            return False
 
         matched: List[str] = []
         in_profile_not_resume: List[str] = []
@@ -300,9 +349,9 @@ class TailorService:
 
         for kw in clean_keywords:
             kw_low = kw.lower()
-            if kw_low in latex_lower:
+            if _matches_blob(kw_low, latex_lower, latex_unescaped_lower):
                 matched.append(kw)
-            elif profile_blob and kw_low in profile_blob:
+            elif profile_blob and _matches_blob(kw_low, profile_blob, profile_blob):
                 in_profile_not_resume.append(kw)
             else:
                 missing.append(kw)
@@ -315,22 +364,29 @@ class TailorService:
             "coverage_pct": coverage_pct,
         }
 
+    @staticmethod
+    def _norm_identity(text: Any) -> str:
+        s = str(text or "").strip().lower()
+        s = s.replace("&", " and ")
+        s = re.sub(r"[^a-z0-9]+", " ", s)
+        return re.sub(r"\s+", " ", s).strip()
+
     @classmethod
     def _match_experience(
         cls, master_exp: Dict[str, Any], candidates: list, used_ids: Optional[set] = None
     ) -> Optional[Dict[str, Any]]:
         used = used_ids if used_ids is not None else set()
         m_id = master_exp.get("id")
-        m_comp = master_exp.get("company", "").strip().lower()
-        m_role = master_exp.get("role", "").strip().lower()
+        m_comp = cls._norm_identity(master_exp.get("company", ""))
+        m_role = cls._norm_identity(master_exp.get("role", ""))
 
         # Pass 0: Match by explicit database ID if present and company/role isn't contradictory
         if m_id is not None:
             for cand in candidates:
                 if not isinstance(cand, dict) or id(cand) in used:
                     continue
-                if cand.get("id") == m_id:
-                    c_comp = str(cand.get("company", "")).strip().lower()
+                if cand.get("id") is not None and str(cand.get("id")).strip() == str(m_id).strip():
+                    c_comp = cls._norm_identity(cand.get("company", ""))
                     if not m_comp or not c_comp or (m_comp in c_comp or c_comp in m_comp):
                         return cand
 
@@ -339,7 +395,7 @@ class TailorService:
             for cand in candidates:
                 if not isinstance(cand, dict) or id(cand) in used:
                     continue
-                c_comp = str(cand.get("company", "")).strip().lower()
+                c_comp = cls._norm_identity(cand.get("company", ""))
                 if c_comp and (m_comp in c_comp or c_comp in m_comp):
                     return cand
 
@@ -347,8 +403,8 @@ class TailorService:
         for cand in candidates:
             if not isinstance(cand, dict) or id(cand) in used:
                 continue
-            c_comp = str(cand.get("company", "")).strip().lower()
-            c_role = str(cand.get("role", "")).strip().lower()
+            c_comp = cls._norm_identity(cand.get("company", ""))
+            c_role = cls._norm_identity(cand.get("role", ""))
             if not c_comp and m_role and c_role and (m_role == c_role):
                 return cand
 
@@ -360,21 +416,21 @@ class TailorService:
     ) -> Optional[Dict[str, Any]]:
         used = used_ids if used_ids is not None else set()
         m_id = master_proj.get("id")
-        m_title = master_proj.get("title", "").strip().lower()
+        m_title = cls._norm_identity(master_proj.get("title", ""))
 
         if m_id is not None:
             for cand in candidates:
                 if not isinstance(cand, dict) or id(cand) in used:
                     continue
-                if cand.get("id") == m_id:
-                    c_title = str(cand.get("title", "")).strip().lower()
+                if cand.get("id") is not None and str(cand.get("id")).strip() == str(m_id).strip():
+                    c_title = cls._norm_identity(cand.get("title", ""))
                     if not m_title or not c_title or (m_title in c_title or c_title in m_title):
                         return cand
 
         for cand in candidates:
             if not isinstance(cand, dict) or id(cand) in used:
                 continue
-            c_title = str(cand.get("title", "")).strip().lower()
+            c_title = cls._norm_identity(cand.get("title", ""))
             if m_title and c_title and (m_title in c_title or c_title in m_title):
                 return cand
         return None
@@ -883,9 +939,17 @@ class TailorService:
                     "technologies": [str(t).strip() for t in master_exp.get("technologies", []) if str(t).strip()][:12],
                 })
 
-        # Append any tailored experiences that were novel
+        # Append any tailored experiences that were novel and not already represented
+        existing_exp_keys = {
+            (cls._norm_identity(e.get("company", "")), cls._norm_identity(e.get("role", "")))
+            for e in final_experiences
+        }
         for t_exp in raw_tailored_exps:
             if id(t_exp) not in matched_tailored and t_exp.get("company"):
+                exp_key = (cls._norm_identity(t_exp.get("company", "")), cls._norm_identity(t_exp.get("role", "")))
+                if exp_key in existing_exp_keys:
+                    continue
+                existing_exp_keys.add(exp_key)
                 final_experiences.append({
                     "company": t_exp.get("company", ""),
                     "role": t_exp.get("role", ""),
@@ -930,16 +994,20 @@ class TailorService:
             else:
                 final_projects.append(master_proj)
 
+        existing_proj_titles = {cls._norm_identity(p.get("title", "")) for p in final_projects if p.get("title")}
         for t_proj in raw_tailored_projs:
             if id(t_proj) not in matched_projs and t_proj.get("title"):
-                final_projects.append(t_proj)
+                norm_t = cls._norm_identity(t_proj.get("title", ""))
+                if norm_t and norm_t not in existing_proj_titles:
+                    existing_proj_titles.add(norm_t)
+                    final_projects.append(t_proj)
 
         # Skills: Support both individual {"category", "name"} and grouped {"category", "skills": [...]} objects
         raw_tailored_skills: List[Dict[str, str]] = []
         for s in tailored.get("tailored_skills", []):
             if not isinstance(s, dict):
                 continue
-            cat = str(s.get("category") or "Technical Skills").strip()
+            cat = str(s.get("category") or "Core Skills").strip()
             prof = str(s.get("proficiency") or "").strip()
             if str(s.get("name", "")).strip():
                 raw_tailored_skills.append({"category": cat, "name": str(s["name"]).strip(), "proficiency": prof})
@@ -948,19 +1016,40 @@ class TailorService:
                     if isinstance(sub_name, str) and sub_name.strip():
                         raw_tailored_skills.append({"category": cat, "name": sub_name.strip(), "proficiency": prof})
 
-        seen_skills = set()
+        # Map each master skill name to its original master category so if the LLM renamed a category,
+        # any backfilled master skills join their sibling skills' tailored category instead of splintering.
+        master_name_to_cat: Dict[str, str] = {}
+        for ms in master_data["skills"]:
+            m_name = str(ms.get("name", "")).strip().lower()
+            m_cat = str(ms.get("category", "")).strip()
+            if m_name and m_cat:
+                master_name_to_cat[m_name] = m_cat
+
+        cat_remap_votes: Dict[str, Dict[str, int]] = {}
+        seen_skill_names: Set[str] = set()
         final_skills = []
         for s in raw_tailored_skills:
-            key = (str(s.get("category", "")).strip().lower(), str(s.get("name", "")).strip().lower())
-            if key not in seen_skills:
-                seen_skills.add(key)
+            s_name = str(s.get("name", "")).strip()
+            s_cat = str(s.get("category", "")).strip()
+            name_key = s_name.lower()
+            if name_key and name_key not in seen_skill_names:
+                seen_skill_names.add(name_key)
                 final_skills.append(s)
+                orig_cat = master_name_to_cat.get(name_key)
+                if orig_cat and s_cat:
+                    cat_remap_votes.setdefault(orig_cat, {})[s_cat] = (
+                        cat_remap_votes.get(orig_cat, {}).get(s_cat, 0) + 1
+                    )
 
         for s in master_data["skills"]:
-            key = (str(s.get("category", "")).strip().lower(), str(s.get("name", "")).strip().lower())
-            if key not in seen_skills:
-                seen_skills.add(key)
-                final_skills.append(s)
+            s_name = str(s.get("name", "")).strip()
+            name_key = s_name.lower()
+            if name_key and name_key not in seen_skill_names:
+                seen_skill_names.add(name_key)
+                orig_cat = str(s.get("category", "")).strip()
+                votes = cat_remap_votes.get(orig_cat, {})
+                target_cat = max(votes.items(), key=lambda kv: kv[1])[0] if votes else orig_cat
+                final_skills.append({**s, "category": target_cat})
 
         resume_latex = LatexGenerator.generate_resume(
             profile=tailored_profile,

@@ -189,7 +189,7 @@ class ResumeParser:
         header_slice = raw_text[:2500]
 
         # Extract candidate name from first markdown H1 if present
-        h1_match = re.search(r"^#\s+([A-Za-z][A-Za-z\s.\-']{2,60})$", header_slice, flags=re.MULTILINE)
+        h1_match = re.search(r"^#\s+([A-Za-z][A-Za-z\s.,\-']{2,75})$", header_slice, flags=re.MULTILINE)
         if h1_match:
             cand_name = h1_match.group(1).strip()
             if cand_name.lower() not in {"resume", "curriculum vitae", "cv", "profile"}:
@@ -281,21 +281,34 @@ class ResumeParser:
                 raise ValueError(f"Resume parser field '{key}' must be a list.")
 
             # Expand grouped skill objects like {"category": "Languages", "skills": ["Python", "Go"]}
+            # and split comma/semicolon-separated skill lists BEFORE truncating individual skill names
             if key == "skills":
                 expanded_skills = []
                 for item in items:
                     if isinstance(item, str):
-                        expanded_skills.append({"category": "Technical Skills", "name": item, "proficiency": ""})
+                        for sub in re.split(r"[,;]+(?![^()]*\))", item):
+                            if sub.strip():
+                                expanded_skills.append({"category": "Technical Skills", "name": sub.strip(), "proficiency": ""})
                     elif isinstance(item, dict):
                         grouped_list = item.get("skills") or item.get("items") or item.get("names")
+                        cat = item.get("category") or "Technical Skills"
+                        prof = item.get("proficiency") or ""
                         if isinstance(grouped_list, list) and not item.get("name"):
-                            cat = item.get("category") or "Technical Skills"
-                            prof = item.get("proficiency") or ""
                             for sub_skill in grouped_list:
                                 if isinstance(sub_skill, str) and sub_skill.strip():
-                                    expanded_skills.append({"category": cat, "name": sub_skill.strip(), "proficiency": prof})
+                                    for part in re.split(r"[,;]+(?![^()]*\))", sub_skill):
+                                        if part.strip():
+                                            expanded_skills.append({"category": cat, "name": part.strip(), "proficiency": prof})
                         else:
-                            expanded_skills.append(item)
+                            raw_name = str(item.get("name") or "")
+                            parts = [p.strip() for p in re.split(r"[,;]+(?![^()]*\))", raw_name) if p.strip()]
+                            if len(parts) > 1:
+                                for part in parts:
+                                    sub_item = dict(item)
+                                    sub_item["name"] = part
+                                    expanded_skills.append(sub_item)
+                            else:
+                                expanded_skills.append(item)
                 items = expanded_skills
 
             normalized_items = []
@@ -362,7 +375,7 @@ class ResumeParser:
                     if "cdk" in name_raw.lower() and "gcp" in cat_raw.lower():
                         record["category"] = "DevOps & Cloud"
                     if "," in name_raw or ";" in name_raw:
-                        sub_names = [s.strip() for s in re.split(r"[,;]+", name_raw) if s.strip()]
+                        sub_names = [s.strip() for s in re.split(r"[,;]+(?![^()]*\))", name_raw) if s.strip()]
                         for sub_name in sub_names:
                             sub_record = dict(record)
                             sub_record["name"] = sub_name

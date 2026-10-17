@@ -184,4 +184,74 @@ describe('parseLatexDocument', () => {
       expect(pdf.getNumberOfPages()).toBe(1);
     });
   });
+
+  it('preserves linked certification titles/dates, project link+date pairs, and escaped cover letter headers', () => {
+    const resumeSource = String.raw`
+\documentclass{resumeforge}
+\begin{document}
+\section{Projects}
+\resumeSubHeadingListStart
+\resumeProjectHeading{\textbf{ICU Early Mobility Protocol} \enspace\textbar\enspace \emph{St. David's ICU Committee} \enspace\textbar\enspace Lead Clinical Investigator}{\href{https://hospital.org/protocols/mobility}{Live} \enspace\textbar\enspace 2022 -- 2023}
+\resumeSubHeadingListEnd
+\section{Certifications}
+\resumeSubHeadingListStart
+\resumeProjectHeading{\href{https://aacn.org/verify/ccrn-12345}{Critical Care Registered Nurse (CCRN)} \enspace\textbar\enspace \emph{AACN}}{Mar 2021}
+\resumeSubHeadingListEnd
+\end{document}`;
+
+    const parsedResume = parseLatexDocument(resumeSource);
+    const projects = parsedResume.sections.find(({ title }) => title === 'Projects');
+    const certs = parsedResume.sections.find(({ title }) => title === 'Certifications');
+
+    expect(projects?.items).toEqual([
+      expect.objectContaining({
+        type: 'project',
+        title: 'ICU Early Mobility Protocol',
+        subtitle: "St. David's ICU Committee | Lead Clinical Investigator",
+        date: '2022 – 2023',
+        links: [{ label: 'Live', url: 'https://hospital.org/protocols/mobility' }],
+      }),
+    ]);
+
+    expect(certs?.items).toEqual([
+      expect.objectContaining({
+        type: 'project',
+        title: 'Critical Care Registered Nurse (CCRN)',
+        subtitle: 'AACN',
+        date: 'Mar 2021',
+        links: [{ label: 'Credential', url: 'https://aacn.org/verify/ccrn-12345' }],
+      }),
+    ]);
+
+    const coverLetterSource = String.raw`
+\documentclass{resumeforge}
+\begin{document}
+\begin{center}
+    \textbf{\Huge \scshape Jonathan Alvarez, CFA, CPA} \\ \vspace{2pt}
+    \small (212) 555-0148 \enspace\textbar\enspace \href{mailto:j.alvarez@finance.org}{j.alvarez@finance.org}
+\end{center}
+\vspace{12pt}
+\noindent
+\textbf{Date:} October 2026 \\
+\textbf{Company:} Johnson \& Johnson \\
+\textbf{Position:} Director of FP\&A and M\&A Strategy \\
+\vspace{10pt}
+\noindent
+Dear Hiring Manager,
+
+I am excited to apply for the Director of FP\&A and M\&A Strategy role at Johnson \& Johnson.
+
+\vspace{12pt}
+\noindent
+Sincerely, \\
+\vspace{6pt}
+\textbf{Jonathan Alvarez, CFA, CPA}
+\end{document}`;
+
+    const parsedCl = parseLatexDocument(coverLetterSource);
+    expect(parsedCl.docType).toBe('cover_letter');
+    expect(parsedCl.company).toBe('Johnson & Johnson');
+    expect(parsedCl.position).toBe('Director of FP&A and M&A Strategy');
+  });
 });
+

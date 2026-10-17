@@ -82,7 +82,15 @@ def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = 
             expected_years = calc_metrics["display_years"]
 
     if expected_years and expected_years >= 1:
-        text = normalize_experience_duration_text(text, expected_years)
+        if r"\section{Experience}" in text and (r"\section{Professional Summary}" in text or r"\section{Summary}" in text):
+            text = re.sub(
+                r"(\\section\{(?:Professional )?Summary\}.*?)(?=\\section\{)",
+                lambda m: normalize_experience_duration_text(m.group(1), expected_years),
+                text,
+                flags=re.DOTALL,
+            )
+        else:
+            text = normalize_experience_duration_text(text, expected_years)
 
     # 4f. LaTeX Math Delimiters in I/O, CI/CD, and metrics
     text = text.replace(r"$>$", r"\textgreater{}").replace(r"$<$", r"\textless{}")
@@ -94,10 +102,24 @@ def normalize_unicode_and_latex_text(text: Any, expected_years: Optional[int] = 
     text = re.sub(r"(?:\$|\\\$)\s*[1Iil]/O(?:\$|\\\$)?(?=\b|\W|$)", "I/O", text)
 
     # 4g. 'Al' (A + lowercase l) glyph confusion for 'AI' (A + capital I)
-    text = re.sub(r"\b[Aa]l-(ready|powered|driven|native|first|focused|enabled|centric)\b", r"AI-\1", text)
+    # Only replace when 'Al' is used in a technical/AI context, never in personal names like 'Dr. Al-Mansoor' or 'Al Green'
+    text = re.sub(
+        r"\b[Aa]l-(ready|powered|driven|native|first|focused|enabled|centric|based|assisted|generated)\b",
+        r"AI-\1",
+        text,
+    )
     text = re.sub(r"\b(Generative\s+|Gen)Al\b", r"\g<1>AI", text, flags=re.IGNORECASE)
     text = re.sub(r"\bAl/ML\b", "AI/ML", text)
-    text = re.sub(r"(?<!\bet\s)(?<!\bet\.\s)\bAl\b", "AI", text)
+    text = re.sub(
+        r"\bAl(?=\s+(?:infrastructure|platforms?|deployments?|models?|systems?|services|agents?|tools?|tooling|workflows?|pipelines?|solutions?|applications?|engineering|engineers?|capabilities|integrations?|features?|assistants?|copilots?|research|safety|governance|automation)\b)",
+        "AI",
+        text,
+    )
+    text = re.sub(
+        r"\b(and|or|in|with|for|using|modern|scalable|enterprise|cloud|fintech)\s+Al(?=[.,;:)!\s]|$)(?!\s+[A-Z][a-z])(?!-[A-Z])",
+        r"\1 AI",
+        text,
+    )
 
     # 4h. Common Typos: asyne -> async, Fast API -> FastAPI
     text = re.sub(r"\basyne\b", "async", text, flags=re.IGNORECASE)
@@ -239,7 +261,37 @@ SPOKEN_LANGUAGES = {
     "english", "spanish", "french", "german", "mandarin", "cantonese", "arabic",
     "hindi", "urdu", "portuguese", "italian", "japanese", "korean", "russian",
     "tagalog", "vietnamese", "punjabi", "bengali", "turkish", "polish", "dutch",
+    "hebrew", "swahili", "farsi", "persian", "greek", "latin", "thai", "indonesian",
+    "malay", "tamil", "telugu", "marathi", "gujarati", "ukrainian", "czech",
+    "romanian", "hungarian", "swedish", "norwegian", "danish", "finnish",
+    "amharic", "yoruba", "igbo", "hausa", "somali", "nepali", "SINHALA".lower(),
+    "khmer", "burmese", "lao", "armenian", "georgian", "kazakh", "uzbek",
+    "asl", "american sign language", "sign language", "british sign language",
 }
+
+PROGRAMMING_LANGUAGES = {
+    "python", "c++", "go", "golang", "typescript", "javascript", "sql", "rust",
+    "java", "bash", "c", "c#", "ruby", "php", "swift", "kotlin", "scala", "dart",
+    "elixir", "r", "matlab", "perl", "lua", "haskell", "clojure", "zig", "solidity",
+    "verilog", "vhdl", "html", "css", "sass", "less", "shell", "powershell",
+    "objective-c", "fortran", "cobol", "assembly", "ocaml", "f#", "erlang", "groovy",
+}
+
+
+def _is_spoken_language(name_low: str) -> bool:
+    """Return True if a skill name represents a human/spoken/signed language (with optional proficiency)."""
+    base = re.sub(r"\s*\([^)]*\)", "", name_low).split("-")[0].split("–")[0].strip()
+    if base in SPOKEN_LANGUAGES or name_low in SPOKEN_LANGUAGES:
+        return True
+    if any(
+        qual in name_low
+        for qual in (
+            "native", "fluent", "conversational", "bilingual", "proficient",
+            "proficiency", "mother tongue", "sign language", "cefr",
+        )
+    ):
+        return True
+    return False
 
 
 def classify_skill_item(cat_hint: str, name: str) -> str:
@@ -247,34 +299,70 @@ def classify_skill_item(cat_hint: str, name: str) -> str:
     c_clean = cat_hint.strip()
     c_low = c_clean.lower()
 
+    # 1. Never misclassify human spoken/signed languages as Programming Languages
+    if _is_spoken_language(n_low):
+        return c_clean if c_clean else "Languages"
+
+    # 2. Programming languages
+    base_token = re.sub(r"\s*\([^)]*\)", "", n_low).strip()
+    is_ambiguous_single_letter = base_token in {"c", "r", "go"}
+    is_tech_or_lang_cat = c_low in {
+        "", "languages", "coding languages", "programming languages", "technical skills",
+        "skills", "backend", "frontend", "software", "development",
+    }
     if (
-        n_low in {
-            "python", "c++", "go", "golang", "typescript", "javascript", "sql", "rust",
-            "java", "bash", "c", "c#", "ruby", "php", "swift", "kotlin", "scala", "dart", "elixir",
-        }
+        (base_token in PROGRAMMING_LANGUAGES and (not is_ambiguous_single_letter or is_tech_or_lang_cat))
         or "programming" in c_low
-        or (c_low in {"languages", "coding languages"} and n_low not in SPOKEN_LANGUAGES)
+        or "coding" in c_low
     ):
         return "Programming Languages"
+
+    # 3. Databases & Caching
     if (
-        any(db in n_low for db in ["postgres", "redis", "database", "mongo", "dynamo", "elastic", "cassandra", "kafka", "mysql", "sqlite", "mariadb", "snowflake", "bigquery"])
+        any(db in n_low for db in [
+            "postgres", "postgresql", "redis", "mongodb", "dynamodb", "elasticsearch",
+            "cassandra", "kafka", "mysql", "sqlite", "mariadb", "snowflake", "bigquery",
+        ])
         or "database" in c_low
         or "caching" in c_low
     ):
         return "Databases & Caching"
+
+    # 4. Cloud & DevOps (use word-boundary matching so "Container Shipping" is not hijacked)
     if (
-        any(cd in n_low for cd in ["docker", "kubernetes", "eks", "gke", "terraform", "cdk", "gitlab", "github actions", "nginx", "helm", "aws", "gcp", "azure", "ci/cd", "container"])
-        or any(k in c_low for k in ["devops", "cloud", "infrastructure as code", "ci/cd", "container"])
+        any(cd in n_low for cd in [
+            "docker", "kubernetes", "eks", "gke", "terraform", "aws cdk", "gitlab",
+            "github actions", "nginx", "helm", "ci/cd", "containerization",
+        ])
+        or bool(re.search(r"\b(?:aws|gcp|azure|cdk)\b", n_low))
+        or any(k in c_low for k in ["devops", "cloud", "infrastructure as code", "ci/cd", "containerization"])
     ):
         return "Cloud & DevOps"
+
+    # 5. Observability & Tools (avoid hijacking "Internal Controls & Testing" or "Soil Testing")
     if (
-        any(obs in n_low for obs in ["prometheus", "grafana", "loki", "tempo", "sentry", "git", "pytest", "datadog", "cloudwatch", "testing", "jest", "cypress", "playwright"])
-        or any(k in c_low for k in ["observab", "version control", "testing"])
+        any(obs in n_low for obs in [
+            "prometheus", "grafana", "loki", "tempo", "sentry", "pytest", "datadog",
+            "cloudwatch", "jest", "cypress", "playwright", "opentelemetry",
+        ])
+        or bool(re.search(r"\bgit\b", n_low))
+        or any(k in c_low for k in ["observab", "version control"])
+        or c_low in {"testing", "software testing", "qa & testing"}
     ):
         return "Observability & Tools"
+
+    # 6. Frameworks & Backend (use word boundaries so "Philips IntelliVue", "Lymph Node", "Expressive" are not hijacked)
     if (
-        any(fw in n_low for fw in ["django", "fastapi", "flask", "spring", "express", "react", "next.js", "vue", "angular", "svelte", "celery", "node", "graphql", "grpc", "restful", "websocket", "ingestion pipeline", "microservice", "pandas", "numpy", "pytorch", "tensorflow", "scikit"])
-        or any(k in c_low for k in ["framework", "libraries", "library", "backend", "frontend", "apis", "api ", "messaging"])
+        any(fw in n_low for fw in [
+            "django", "fastapi", "flask", "spring boot", "next.js", "nextjs", "react.js",
+            "vue.js", "vuejs", "angular", "svelte", "celery", "node.js", "nodejs",
+            "graphql", "grpc", "restful", "websocket", "ingestion pipeline",
+            "microservice", "pandas", "numpy", "pytorch", "tensorflow", "scikit",
+        ])
+        or bool(re.search(r"\b(?:react|vue|express|node|spring)\b", n_low) and not any(
+            non_sw in n_low for non_sw in ["lymph", "biopsy", "dissection", "therapy", "water", "spring ", "express "]
+        ))
+        or any(k in c_low for k in ["framework", "libraries", "backend", "frontend", "apis", "api ", "messaging"])
     ):
         return "Frameworks & Backend"
 
@@ -304,7 +392,7 @@ def consolidate_raw_latex_skills(text: str) -> str:
             cat_title_clean = cat_title.replace(r"\&", "&").strip()
             # Clean potential period typo e.g. "Redis. Redis Pub/Sub"
             items_str = re.sub(r"\.\s+", ", ", items_str)
-            parts = [p.strip().rstrip(".") for p in re.split(r"[,;]+", items_str) if p.strip()]
+            parts = [p.strip().rstrip(".") for p in re.split(r"[,;]+(?![^()]*\))", items_str) if p.strip()]
             for p in parts:
                 p_norm = p.strip()
                 if p_norm.lower() in {"fast api", "fastapi"}:
@@ -350,7 +438,7 @@ def consolidate_skills_to_latex(skills: List[Dict[str, Any]]) -> str:
         if not name_str:
             continue
         name_str = re.sub(r"\.\s+", ", ", name_str)
-        sub_items = [s.strip().rstrip(".") for s in re.split(r"[,;]+", name_str) if s.strip()]
+        sub_items = [s.strip().rstrip(".") for s in re.split(r"[,;]+(?![^()]*\))", name_str) if s.strip()]
         for sub in sub_items:
             sub_norm = sub.strip()
             if sub_norm.lower() in {"fast api", "fastapi"}:
@@ -379,8 +467,10 @@ def consolidate_skills_to_latex(skills: List[Dict[str, Any]]) -> str:
     if not cat_strings:
         return ""
 
+    has_software_cats = any(categorized.get(cat) for cat in CANONICAL_SKILL_CATEGORIES)
+    section_title = r"\section{Technical Skills}" if has_software_cats else r"\section{Skills}"
     skill_lines = [
-        r"\section{Technical Skills}",
+        section_title,
         r"\begin{itemize}[leftmargin=0.15in, label={}]",
         r"\small{\item{",
         " \\\\ \n".join(cat_strings),

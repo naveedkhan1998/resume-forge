@@ -19,11 +19,49 @@ import docx
 BULLET_CHARS_REGEX = re.compile(r"^[\u2022\u25cf\u25cb\u25e6·\-\*►▪▸]\s*")
 SECTION_HEADER_KEYWORDS = {
     "experience", "work experience", "employment", "professional experience",
-    "education", "academic background", "skills", "technical skills",
-    "projects", "personal projects", "certifications", "licenses", "certificates",
-    "summary", "professional summary", "profile", "about me", "objective",
-    "awards", "honors", "publications", "languages", "volunteer", "interests"
+    "clinical experience", "teaching experience", "research experience", "leadership experience",
+    "relevant experience", "legal experience", "culinary experience", "military experience",
+    "education", "academic background", "education and training",
+    "skills", "technical skills", "core competencies", "core competencies and skills",
+    "skills and competencies", "areas of expertise", "clinical skills", "key skills",
+    "projects", "personal projects", "selected projects", "academic projects",
+    "clinical projects", "clinical projects and quality initiatives", "projects and transactions",
+    "curriculum projects", "research projects", "key projects",
+    "certifications", "licenses", "certificates", "licensure",
+    "licenses and certifications", "certifications and licenses", "licensure and certifications",
+    "bar admissions", "board certifications", "credentials",
+    "summary", "professional summary", "executive summary", "clinical summary", "profile", "about me", "objective",
+    "awards", "honors", "awards and honors", "publications", "selected publications",
+    "exhibitions", "selected exhibitions", "solo exhibitions", "group exhibitions",
+    "collections", "residencies", "fellowships", "grants", "grants and fellowships",
+    "presentations", "conferences", "speaking engagements",
+    "affiliations", "professional affiliations", "memberships",
+    "languages", "volunteer", "volunteer experience", "community involvement", "service", "leadership", "interests",
 }
+SECTION_HEADER_ROOT_WORDS = {
+    "experience", "experiences", "employment", "education", "skills", "competencies", "expertise",
+    "projects", "initiatives", "transactions", "certifications", "licenses", "licensure", "credentials",
+    "summary", "profile", "objective", "awards", "honors", "publications", "exhibitions",
+    "collections", "residencies", "fellowships", "grants", "presentations", "conferences",
+    "affiliations", "memberships", "languages", "volunteer", "service", "leadership", "interests",
+}
+
+
+def _is_section_header_line(text: str) -> bool:
+    """Return True if a standalone short line matches a known or multi-profession resume section header."""
+    if not text or "|" in text or "@" in text or "http://" in text.lower() or "https://" in text.lower():
+        return False
+    if any(ch.isdigit() for ch in text):
+        return False
+    clean_cand = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z\s]", " ", text.replace("&", " and "))).strip().lower()
+    clean_no_and = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z\s]", " ", text)).strip().lower()
+    if clean_cand in SECTION_HEADER_KEYWORDS or clean_no_and in SECTION_HEADER_KEYWORDS:
+        return True
+    words = clean_no_and.split()
+    if 1 <= len(words) <= 6 and text.isupper():
+        if words[-1] in SECTION_HEADER_ROOT_WORDS or words[0] in SECTION_HEADER_ROOT_WORDS:
+            return True
+    return False
 
 
 class DocumentMarkdownConverter:
@@ -267,8 +305,7 @@ class DocumentMarkdownConverter:
         is_bullet = bool(BULLET_CHARS_REGEX.match(first_word) or BULLET_CHARS_REGEX.match(plain_text))
 
         # Check if line is a major section heading
-        clean_heading_cand = re.sub(r"[^A-Za-z\s]", "", plain_text).strip().lower()
-        is_known_section = clean_heading_cand in SECTION_HEADER_KEYWORDS
+        is_known_section = _is_section_header_line(plain_text)
         is_all_caps = (
             len(plain_text) >= 3
             and plain_text.isupper()
@@ -407,8 +444,8 @@ class DocumentMarkdownConverter:
                 bullet_body = BULLET_CHARS_REGEX.sub("", p_md).strip()
                 md_lines.append(f"- {bullet_body}")
             else:
-                # Check for all-caps section header
-                if text.isupper() and len(text.split()) <= 4 and text.lower() in SECTION_HEADER_KEYWORDS:
+                # Check for section header
+                if _is_section_header_line(text):
                     md_lines.append(f"\n## {text}\n")
                 else:
                     md_lines.append(p_md)
@@ -438,11 +475,7 @@ class DocumentMarkdownConverter:
                     md_lines.append("")
                 continue
 
-            clean_cand = re.sub(r"[^A-Za-z\s]", "", line).strip().lower()
-            is_section = clean_cand in SECTION_HEADER_KEYWORDS
-            is_all_caps = line.isupper() and len(line.split()) <= 4 and len(line) >= 3
-
-            if is_section or (is_all_caps and clean_cand in SECTION_HEADER_KEYWORDS):
+            if _is_section_header_line(line):
                 md_lines.append(f"\n## {line.title()}\n")
             elif BULLET_CHARS_REGEX.match(line):
                 body = BULLET_CHARS_REGEX.sub("", line).strip()

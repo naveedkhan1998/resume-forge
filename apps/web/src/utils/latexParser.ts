@@ -248,20 +248,33 @@ function parseResume(source: string): ParsedDocument {
           location: cleanLatex(args[3]),
         });
       } else if (command === 'project') {
-        const headingText = args[0].replace(
-          /\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g,
-          '',
-        );
-        const headingParts = headingText
-          .split(/\$\|\$|\||\\textbar/)
-          .map((part) => cleanLatex(part))
+        const rawSegments = args[0].split(/\$\|\$|\||\\textbar/);
+        const headingParts = rawSegments
+          .map((segment, idx) => {
+            if (idx === 0) {
+              return cleanLatex(segment);
+            }
+            const withoutLinks = segment.replace(
+              /\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g,
+              '',
+            );
+            return cleanLatex(withoutLinks.replace(/^[\s/]+|[\s/]+$/g, ''));
+          })
           .filter(Boolean);
-        const links = extractLinks(`${args[0]} ${args[1]}`);
+        const title = headingParts[0] || '';
+        const rawLinks = extractLinks(`${args[0]} ${args[1]}`);
+        const links = rawLinks.map((link) =>
+          title && link.label === title ? { ...link, label: 'Credential' } : link,
+        );
+        const arg1WithoutLinks = args[1]
+          .replace(/\\href\{((?:\\.|[^{}])*)\}\{((?:\\.|[^{}])*)\}/g, '')
+          .replace(/\$\|\$|\||\\textbar/g, ' ');
+        const cleanedDate = cleanLatex(arg1WithoutLinks).replace(/^[\s/|]+|[\s/|]+$/g, '').trim();
         section.items.push({
           type: 'project',
-          title: headingParts[0] || '',
+          title,
           subtitle: headingParts.slice(1).join(' | '),
-          date: links.length > 0 ? '' : cleanLatex(args[1]),
+          date: cleanedDate,
           links,
         });
       } else {
@@ -334,13 +347,13 @@ function parseCoverLetter(source: string): ParsedDocument {
     doc.contactItems = parseInlineContactItems(centerMatch[1]);
   }
 
-  const dateMatch = source.match(/\\textbf\{Date:\}\s*([^\\]+)/i);
+  const dateMatch = source.match(/\\textbf\{Date:\}\s*([^\n]+?)(?:\\\\|\n|$)/i);
   if (dateMatch) doc.date = cleanLatex(dateMatch[1]);
 
-  const compMatch = source.match(/\\textbf\{Company:\}\s*([^\\]+)/i);
+  const compMatch = source.match(/\\textbf\{Company:\}\s*([^\n]+?)(?:\\\\|\n|$)/i);
   if (compMatch) doc.company = cleanLatex(compMatch[1]);
 
-  const posMatch = source.match(/\\textbf\{Position:\}\s*([^\\]+)/i);
+  const posMatch = source.match(/\\textbf\{Position:\}\s*([^\n]+?)(?:\\\\|\n|$)/i);
   if (posMatch) doc.position = cleanLatex(posMatch[1]);
 
   // Extract letter paragraphs between "Dear Hiring Manager," and "Sincerely"

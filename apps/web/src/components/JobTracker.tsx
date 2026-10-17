@@ -1218,7 +1218,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                     type="text"
                     required
                     autoFocus
-                    placeholder="Stripe"
+                    placeholder="e.g., Mayo Clinic, Deloitte, Stripe"
                     value={newJob.company_name}
                     onChange={(e) => setNewJob({ ...newJob, company_name: e.target.value })}
                   />
@@ -1227,7 +1227,7 @@ export const JobTracker: React.FC<JobTrackerProps> = ({ activeModel }) => {
                   <TextInput
                     type="text"
                     required
-                    placeholder="Backend Engineer"
+                    placeholder="e.g., ICU Nurse, Financial Analyst, Product Manager"
                     value={newJob.job_title}
                     onChange={(e) => setNewJob({ ...newJob, job_title: e.target.value })}
                   />

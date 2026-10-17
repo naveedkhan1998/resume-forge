@@ -186,24 +186,39 @@ def normalize_experience_duration_text(text: str, expected_years: Optional[int])
     """Dynamically adjust undersold duration in text (e.g. summary) to match calculated experience.
     
     If expected_years is None or < 1, the text is returned unmodified (no hardcoding).
-    If expected_years is 4 and the model wrote '2+ years' or '1 year', it corrects to '4+ years'.
+    If expected_years is 4 and the model wrote '2+ years' or '1 year of experience', it corrects to '4+ years'.
     If the stated years are >= expected_years, they are preserved.
     """
     if not text or not expected_years or expected_years < 1:
         return text
 
     def repl(m: re.Match) -> str:
+        full_match = m.group(0)
         raw_val = m.group(1)
-        suffix = m.group(2)
+        has_plus = bool(m.group(2))
+        suffix = m.group(3)
+        after_text = text[m.end():m.end() + 30].lower()
+        before_text = text[max(0, m.start() - 25):m.start()].lower()
+
+        # Never alter age expressions like "5 years old" or "5 year old"
+        if re.match(r"^\s*(?:-\s*)?old\b", after_text):
+            return full_match
+
+        # If singular "year" without "+" (e.g., "1 year retention", "3 year study"), only alter if followed by "of ... experience" or preceded by "with / have / bringing / over"
+        if suffix.lower() == "year" and not has_plus:
+            if not re.match(r"^\s+of\b", after_text) and not re.search(r"\b(?:with|have|has|bringing|brings|over)\s+$", before_text):
+                return full_match
+
         try:
             val = float(raw_val)
             if val < expected_years:
-                return f"{expected_years}+ {suffix}"
-            return m.group(0)
+                plural_suffix = "years" if expected_years > 1 and suffix.lower() == "year" else suffix
+                return f"{expected_years}+ {plural_suffix}"
+            return full_match
         except ValueError:
-            return m.group(0)
+            return full_match
 
-    pattern = re.compile(r"\b(\d+(?:\.\d+)?)\+?\s*(years?)\b", re.IGNORECASE)
+    pattern = re.compile(r"\b(\d+(?:\.\d+)?)(\+)?\s*(years?)\b", re.IGNORECASE)
     return pattern.sub(repl, text)
 
 
