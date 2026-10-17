@@ -16,7 +16,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
 # Copy backend code and entrypoint script
 COPY apps/api /app/apps/api
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    USE_SQLITE=1 python apps/api/manage.py collectstatic --noinput
 
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]
